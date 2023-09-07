@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "php-types-rust"
+name = "php_types_rust"
 version = "0.1.0"

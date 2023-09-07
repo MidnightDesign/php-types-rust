@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::error::Error;
+use std::string::String;
 use std::fmt::{Debug, Display, Formatter};
-use crate::parser::{Node, Parameter, ToNode};
+use crate::parser::{Node, Parameter, StructMember, ToNode};
 use crate::scope::Scope;
 
 #[derive(PartialEq, Clone)]
@@ -10,6 +12,7 @@ pub enum Type {
         parameters: Vec<Param>,
         return_type: Box<Type>,
     },
+    ClassString(Option<Box<Type>>),
     Float,
     Int {
         min: Option<isize>,
@@ -35,6 +38,9 @@ pub enum Type {
     Resource,
     Scalar,
     String(Option<StringFlag>),
+    StringLiteral(String),
+    Struct(Vec<(String, Type, bool)>),
+    Tuple(Vec<Type>),
     Union(Box<Type>, Box<Type>),
     Void,
 }
@@ -42,6 +48,10 @@ pub enum Type {
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            Type::ClassString(type_) => match type_ {
+                None => write!(f, "class-string"),
+                Some(type_) => write!(f, "class-string<{}>", type_),
+            },
             Type::Map {
                 key,
                 value,
@@ -104,11 +114,36 @@ impl Display for Type {
                 }
                 write!(f, "): {}", return_type)
             }
+            Type::Struct(members) => {
+                write!(f, "array{{")?;
+                for (i, (name, type_, optional)) in members.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", name)?;
+                    if *optional {
+                        write!(f, "?")?;
+                    }
+                    write!(f, ": {}", type_)?;
+                }
+                write!(f, "}}")
+            }
+            Type::StringLiteral(value) => write!(f, "'{}'", value),
+            Type::Tuple(elements) => {
+                write!(f, "array{{")?;
+                for (i, element) in elements.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", element)?;
+                }
+                write!(f, "}}")
+            }
         }
     }
 }
 
-fn int<'a>(parameters: Vec<Node>) -> Result<Type, InvalidType> {
+fn int(parameters: Vec<Node>) -> Result<Type, InvalidType> {
     match parameters.as_slice() {
         [] => Ok(Type::Int {
             min: None,
@@ -150,7 +185,7 @@ fn comma_separated_nodes(nodes: Vec<Node>) -> String {
         .join(", ")
 }
 
-fn array<'a>(mut parameters: Vec<Node>, non_empty: bool, scope: &Scope) -> Result<Type, InvalidType> {
+fn array(mut parameters: Vec<Node>, non_empty: bool, scope: &Scope) -> Result<Type, InvalidType> {
     let array_key = Type::Union(
         Box::new(Type::Int {
             min: None,
@@ -163,12 +198,12 @@ fn array<'a>(mut parameters: Vec<Node>, non_empty: bool, scope: &Scope) -> Resul
         1 => {
             let value = parameters.pop().unwrap();
             (array_key, Type::from_node(value, scope)?)
-        },
+        }
         2 => {
             let key = parameters.pop().unwrap();
             let value = parameters.pop().unwrap();
             (Type::from_node(key, scope)?, Type::from_node(value, scope)?)
-        },
+        }
         _ => {
             return Err(InvalidType::new(format!(
                 "array<{}>",
@@ -185,7 +220,7 @@ fn list<'a>(mut parameters: Vec<Node>, non_empty: bool, scope: &Scope) -> Result
         1 => {
             let value_type = parameters.pop().unwrap();
             Type::from_node(value_type, scope)?
-        },
+        }
         _ => {
             return Err(InvalidType::new(format!(
                 "list<{}>",
@@ -205,12 +240,12 @@ pub fn iterable<'a>(mut parameters: Vec<Node>, scope: &Scope) -> Result<Type, In
         1 => {
             let value = parameters.pop().unwrap();
             (Type::Mixed, Type::from_node(value, scope)?)
-        },
+        }
         2 => {
             let key = parameters.pop().unwrap();
             let value = parameters.pop().unwrap();
             (Type::from_node(key, scope)?, Type::from_node(value, scope)?)
-        },
+        }
         _ => {
             return Err(InvalidType::new(format!(
                 "iterable<{}>",
@@ -292,12 +327,35 @@ fn create_union<'a>(left: Type, right: Type) -> Type {
     union_from_types(types)
 }
 
+fn create_struct(members: HashMap<String, StructMember>) -> Result<Type, InvalidType> {
+    let mut struct_members = Vec::new();
+    for (name, member) in members {
+        struct_members.push((name, Type::from_node(member.type_node, &Scope::global())?, member.optional));
+    }
+    Ok(Type::Struct(struct_members))
+}
+
+fn class_string(mut parameters: Vec<Node>, scope: &Scope) -> Result<Type, InvalidType> {
+    match parameters.len() {
+        0 => Ok(Type::ClassString(None)),
+        1 => {
+            let type_ = parameters.pop().unwrap();
+            Ok(Type::ClassString(Some(Box::new(Type::from_node(type_, scope)?))))
+        }
+        _ => Err(InvalidType::new(format!(
+            "class-string<{}>",
+            comma_separated_nodes(parameters)
+        ))),
+    }
+}
+
 impl Type {
     pub fn from_node(node: Node, scope: &Scope) -> Result<Self, InvalidType> {
         match node {
             Node::Identifier(name, parameters) => match name.as_str() {
                 "array" => array(parameters, false, scope),
                 "bool" => no_params(Type::Bool(None), parameters),
+                "class-string" => class_string(parameters, scope),
                 "false" => no_params(Type::Bool(Some(false)), parameters),
                 "float" => no_params(Type::Float, parameters),
                 "int" => int(parameters),
@@ -331,7 +389,12 @@ impl Type {
                 "string" => no_params(Type::String(None), parameters),
                 "true" => no_params(Type::Bool(Some(true)), parameters),
                 "void" => no_params(Type::Void, parameters),
-                _ => Err(InvalidType::new(format!("{}", name))),
+                _ => {
+                    match scope.lookup(&name) {
+                        Some(tipe) => Ok(tipe),
+                        None => Err(InvalidType::new(format!("{}", name))),
+                    }
+                }
             },
             Node::IntLiteral(value) => Ok(Type::IntLiteral(value)),
             Node::Union(left, right) => Ok(create_union(
@@ -339,6 +402,15 @@ impl Type {
                 Type::from_node(*right, scope)?,
             )),
             Node::Callable(return_type, parameters) => callable(parameters, return_type.map(|t| *t), scope),
+            Node::Struct(members) => create_struct(members),
+            Node::StringLiteral(value) => Ok(Type::StringLiteral(value)),
+            Node::Tuple(elements) => {
+                let mut types = Vec::new();
+                for element in elements {
+                    types.push(Type::from_node(element, scope)?);
+                }
+                Ok(Type::Tuple(types))
+            }
             _ => Err(InvalidType::new(format!("{}", node))),
         }
     }
@@ -381,7 +453,7 @@ impl Display for InvalidType {
 impl Error for InvalidType {}
 
 impl InvalidType {
-    pub fn new(type_string: String) -> InvalidType {
+    pub fn new(type_string: std::string::String) -> InvalidType {
         InvalidType { type_string }
     }
 }
@@ -393,5 +465,72 @@ pub trait ToType {
 impl ToType for str {
     fn to_type(&self, scope: &Scope) -> Result<Type, InvalidType> {
         Type::from_node(self.to_node().map_err(|parse_error| InvalidType::new(format!("{}", parse_error)))?, scope)
+    }
+}
+
+pub fn compare_bool(sub_value: &Option<bool>, upper_value: &Option<bool>) -> bool {
+    match (sub_value, upper_value) {
+        (_, None) => true,
+        (None, Some(_)) => false,
+        (Some(sub_value), Some(uper_value)) => sub_value == uper_value,
+    }
+}
+
+pub fn compare_callable(
+    sub_parameters: &[Param],
+    super_parameters: &[Param],
+    sub_return_type: &Type,
+    super_return_type: &Type,
+) -> bool {
+    if !sub_return_type.is_subtype_of(super_return_type) {
+        return false;
+    }
+    for (i, sub_param) in sub_parameters.iter().enumerate() {
+        if i >= super_parameters.len() {
+            return false;
+        }
+        let super_param = &super_parameters[i];
+        if !super_param.type_.is_subtype_of(&sub_param.type_) {
+            return false;
+        }
+    }
+    return true;
+}
+
+fn compare_int(
+    sub_min: &Option<isize>,
+    sub_max: &Option<isize>,
+    sup_min: &Option<isize>,
+    sup_max: &Option<isize>,
+) -> bool {
+    let sub = (sub_min.map_or(isize::MIN, |v| v), sub_max.map_or(isize::MAX, |v| v));
+    let sup = (sup_min.map_or(isize::MIN, |v| v), sup_max.map_or(isize::MAX, |v| v));
+    return sub.0 >= sup.0 && sub.1 <= sup.1;
+}
+
+impl Type {
+    pub fn is_subtype_of(&self, sup: &Type) -> bool {
+        if self == sup {
+            return true;
+        }
+        match (self, sup) {
+            (_, Type::Mixed) => true,
+            (Type::Bool(sub_value), Type::Bool(upper_value)) => compare_bool(sub_value, upper_value),
+            (_, Type::Union(left, right)) => self.is_subtype_of(left) || self.is_subtype_of(right),
+            (Type::Bool(_) | Type::Int { .. } | Type::Float | Type::String(_) | Type::IntLiteral(_) | Type::StringLiteral(_) | Type::ClassString(_), Type::Scalar) => true,
+            (Type::String(_), Type::String(None)) => true,
+            (
+                Type::Callable { parameters: sub_parameters, return_type: sub_return_type },
+                Type::Callable { parameters: super_parameters, return_type: super_return_type }
+            ) => {
+                compare_callable(sub_parameters, super_parameters, sub_return_type, super_return_type)
+            }
+            (_, Type::Void) => true,
+            (Type::Int { min: _, max: _ }, Type::Float) => true,
+            (Type::Int { min: sub_min, max: sub_max }, Type::Int { min: sup_min, max: sup_max }) => compare_int(sub_min, sub_max, sup_min, sup_max),
+            (Type::Int { min, max }, Type::IntLiteral(value)) => min.map_or(false, |min| min == *value) && max.map_or(false, |max| max == *value),
+            (Type::IntLiteral(_), Type::Float | Type::Int { .. }) => true,
+            (_, _) => false,
+        }
     }
 }

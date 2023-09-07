@@ -1,0 +1,2 @@
+- `RunnableAndLoggable` is a subtype of `RunnableAndLoggable`
+- `RunnableAndLoggable` is a subtype of `Runnable & Loggable`

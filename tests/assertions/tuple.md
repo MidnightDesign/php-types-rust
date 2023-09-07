@@ -1,0 +1,61 @@
+- `array{}` is a subtype of `false | list<string>`
+- `array{}` is a subtype of `list<int>`
+- `array{}` is a subtype of `list<int | bool>`
+- `array{}` is a subtype of `list<int | string>`
+- `array{}` is a subtype of `list<string>`
+- `array{}` is a subtype of `list<string> | list<int>`
+- `array{}` is a subtype of `list<string> | string`
+- `array{}` is a subtype of `string | list<string>`
+
+- `array{int, string}` is a subtype of `array`
+- `array{int, string}` is a subtype of `array<array-key, mixed>`
+- `array{int, string}` is a subtype of `array<array-key, string | int>`
+- `array{int, string}` is a subtype of `array<mixed>`
+- `array{int, string}` is a subtype of `array{}`
+- `array{int, string}` is a subtype of `array{int, string}`
+- `array{int, string}` is a subtype of `iterable`
+- `array{int, string}` is a subtype of `iterable<mixed>`
+- `array{int, string}` is a subtype of `iterable<mixed, mixed>`
+- `array{int, string}` is a subtype of `list<int | string>`
+
+- `array{string, int}` is a subtype of `array`
+- `array{string, int}` is a subtype of `array<array-key, mixed>`
+- `array{string, int}` is a subtype of `array<array-key, string | int>`
+- `array{string, int}` is a subtype of `array<mixed>`
+- `array{string, int}` is a subtype of `array{}`
+- `array{string, int}` is a subtype of `array{string, int}`
+- `array{string, int}` is a subtype of `iterable`
+- `array{string, int}` is a subtype of `iterable<mixed>`
+- `array{string, int}` is a subtype of `iterable<mixed, mixed>`
+- `array{string, int}` is a subtype of `list<int | string>`
+
+- `array{string, int, string}` is a subtype of `array`
+- `array{string, int, string}` is a subtype of `array<array-key, mixed>`
+- `array{string, int, string}` is a subtype of `array<array-key, string | int>`
+- `array{string, int, string}` is a subtype of `array<mixed>`
+- `array{string, int, string}` is a subtype of `array{}`
+- `array{string, int, string}` is a subtype of `array{string, int}`
+- `array{string, int, string}` is a subtype of `array{string, int, string}`
+- `array{string, int, string}` is a subtype of `iterable`
+- `array{string, int, string}` is a subtype of `iterable<mixed>`
+- `array{string, int, string}` is a subtype of `iterable<mixed, mixed>`
+- `array{string, int, string}` is a subtype of `list<int | string>`
+
+- `array{string, string}` is a subtype of `array`
+- `array{string, string}` is a subtype of `array<array-key, mixed>`
+- `array{string, string}` is a subtype of `array<array-key, string | int>`
+- `array{string, string}` is a subtype of `array<int, string>`
+- `array{string, string}` is a subtype of `array<mixed>`
+- `array{string, string}` is a subtype of `array{}`
+- `array{string, string}` is a subtype of `array{string, string}`
+- `array{string, string}` is a subtype of `false | list<string>`
+- `array{string, string}` is a subtype of `iterable`
+- `array{string, string}` is a subtype of `iterable<mixed>`
+- `array{string, string}` is a subtype of `iterable<mixed, mixed>`
+- `array{string, string}` is a subtype of `iterable<mixed, string>`
+- `array{string, string}` is a subtype of `list<int | string>`
+- `array{string, string}` is a subtype of `list<string>`
+- `array{string, string}` is a subtype of `list<string> | list<int>`
+- `array{string, string}` is a subtype of `list<string> | string`
+- `array{string, string}` is a subtype of `non-empty-list<string>`
+- `array{string, string}` is a subtype of `string | list<string>`

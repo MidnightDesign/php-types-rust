@@ -18,8 +18,8 @@ pub struct Parameter {
 
 #[derive(Debug)]
 pub struct StructMember {
-    type_node: Node,
-    optional: bool,
+    pub type_node: Node,
+    pub optional: bool,
 }
 
 #[derive(Debug)]
@@ -234,6 +234,9 @@ fn parse_callable(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, ParseError
 //              =====
 fn parse_tuple_member(tokens: &mut Peekable<Iter<Token>>) -> Option<Node> {
     skip_whitespace(tokens);
+    if let Token::CloseBrace = tokens.peek()? {
+        return None;
+    }
     let member_type = match ast_from_string(tokens) {
         Ok(node) => node,
         Err(_) => return None,

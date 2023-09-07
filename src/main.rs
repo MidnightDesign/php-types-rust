@@ -9,5 +9,5 @@ use crate::scope::Scope;
 
 
 fn main() {
-    println!("{}", parse_type("array<string, int>", &Scope::global()).unwrap());
+    println!("{}", parse_type("array{int, string}", &Scope::global()).unwrap());
 }

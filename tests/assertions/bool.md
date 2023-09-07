@@ -1,0 +1,23 @@
+- `bool` is a subtype of `bool`
+- `bool` is a subtype of `bool | true`
+- `bool` is a subtype of `false | true`
+- `bool` is a subtype of `scalar`
+- `bool` is a subtype of `string | int | bool`
+- `bool` is a subtype of `true | false`
+
+- `false` is a subtype of `bool`
+- `false` is a subtype of `bool | true`
+- `false` is a subtype of `false`
+- `false` is a subtype of `false | list<string>`
+- `false` is a subtype of `false | true`
+- `false` is a subtype of `scalar`
+- `false` is a subtype of `string | int | bool`
+- `false` is a subtype of `true | false`
+
+- `true` is a subtype of `bool`
+- `true` is a subtype of `bool | true`
+- `true` is a subtype of `false | true`
+- `true` is a subtype of `true`
+- `true` is a subtype of `scalar`
+- `true` is a subtype of `string | int | bool`
+- `true` is a subtype of `true | false`
