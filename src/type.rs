@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::error::Error;
-use std::string::String;
-use std::fmt::{Debug, Display, Formatter};
 use crate::parser::{Node, Parameter, StructMember, ToNode};
 use crate::scope::Scope;
+use std::collections::HashMap;
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter};
+use std::string::String;
 
 #[derive(PartialEq, Clone)]
 pub enum Type {
@@ -12,12 +12,18 @@ pub enum Type {
         parameters: Vec<Param>,
         return_type: Box<Type>,
     },
+    ClassLike {
+        name: String,
+        parameters: Vec<Type>,
+        parents: Vec<Type>,
+    },
     ClassString(Option<Box<Type>>),
     Float,
     Int {
         min: Option<isize>,
         max: Option<isize>,
     },
+    Intersection(Box<Type>, Box<Type>),
     IntLiteral(isize),
     Iterable {
         key: Box<Type>,
@@ -52,6 +58,27 @@ impl Display for Type {
                 None => write!(f, "class-string"),
                 Some(type_) => write!(f, "class-string<{}>", type_),
             },
+            Type::ClassLike {
+                name,
+                parameters,
+                parents: _,
+            } => {
+                if parameters.is_empty() {
+                    write!(f, "{}", name)
+                } else {
+                    write!(
+                        f,
+                        "{}<{}>",
+                        name,
+                        parameters
+                            .iter()
+                            .map(|type_| type_.to_string())
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    )
+                }
+            }
+            Type::Intersection(left, right) => write!(f, "{} & {}", left, right),
             Type::Map {
                 key,
                 value,
@@ -211,10 +238,18 @@ fn array(mut parameters: Vec<Node>, non_empty: bool, scope: &Scope) -> Result<Ty
             )));
         }
     };
-    Ok(Type::Map { key: Box::new(key), value: Box::new(value), non_empty })
+    Ok(Type::Map {
+        key: Box::new(key),
+        value: Box::new(value),
+        non_empty,
+    })
 }
 
-fn list<'a>(mut parameters: Vec<Node>, non_empty: bool, scope: &Scope) -> Result<Type, InvalidType> {
+fn list<'a>(
+    mut parameters: Vec<Node>,
+    non_empty: bool,
+    scope: &Scope,
+) -> Result<Type, InvalidType> {
     let value_type = match parameters.len() {
         0 => Type::Mixed,
         1 => {
@@ -293,7 +328,7 @@ fn no_params<'a>(type_: Type, parameters: Vec<Node>) -> Result<Type, InvalidType
 
 fn flatten(type_: Type) -> Vec<Type> {
     match type_ {
-        Type::Union(left, right) => {
+        Type::Union(left, right) | Type::Intersection(left, right) => {
             let mut left = flatten(*left);
             let mut right = flatten(*right);
             left.append(&mut right);
@@ -320,7 +355,7 @@ fn create_union<'a>(left: Type, right: Type) -> Type {
     if types.contains(&&Type::Bool(Some(false))) && types.contains(&&Type::Bool(Some(true))) {
         types.retain(|type_| match type_ {
             Type::Bool(_) => false,
-            _ => true
+            _ => true,
         });
         types.push(Type::Bool(None));
     }
@@ -330,7 +365,11 @@ fn create_union<'a>(left: Type, right: Type) -> Type {
 fn create_struct(members: HashMap<String, StructMember>) -> Result<Type, InvalidType> {
     let mut struct_members = Vec::new();
     for (name, member) in members {
-        struct_members.push((name, Type::from_node(member.type_node, &Scope::global())?, member.optional));
+        struct_members.push((
+            name,
+            Type::from_node(member.type_node, &Scope::global())?,
+            member.optional,
+        ));
     }
     Ok(Type::Struct(struct_members))
 }
@@ -340,7 +379,9 @@ fn class_string(mut parameters: Vec<Node>, scope: &Scope) -> Result<Type, Invali
         0 => Ok(Type::ClassString(None)),
         1 => {
             let type_ = parameters.pop().unwrap();
-            Ok(Type::ClassString(Some(Box::new(Type::from_node(type_, scope)?))))
+            Ok(Type::ClassString(Some(Box::new(Type::from_node(
+                type_, scope,
+            )?))))
         }
         _ => Err(InvalidType::new(format!(
             "class-string<{}>",
@@ -389,19 +430,19 @@ impl Type {
                 "string" => no_params(Type::String(None), parameters),
                 "true" => no_params(Type::Bool(Some(true)), parameters),
                 "void" => no_params(Type::Void, parameters),
-                _ => {
-                    match scope.lookup(&name) {
-                        Some(tipe) => Ok(tipe),
-                        None => Err(InvalidType::new(format!("{}", name))),
-                    }
-                }
+                _ => match scope.lookup(&name) {
+                    Some(tipe) => Ok(tipe.clone()),
+                    None => Err(InvalidType::new(name.to_string())),
+                },
             },
             Node::IntLiteral(value) => Ok(Type::IntLiteral(value)),
             Node::Union(left, right) => Ok(create_union(
                 Type::from_node(*left, scope)?,
                 Type::from_node(*right, scope)?,
             )),
-            Node::Callable(return_type, parameters) => callable(parameters, return_type.map(|t| *t), scope),
+            Node::Callable(return_type, parameters) => {
+                callable(parameters, return_type.map(|t| *t), scope)
+            }
             Node::Struct(members) => create_struct(members),
             Node::StringLiteral(value) => Ok(Type::StringLiteral(value)),
             Node::Tuple(elements) => {
@@ -411,7 +452,10 @@ impl Type {
                 }
                 Ok(Type::Tuple(types))
             }
-            _ => Err(InvalidType::new(format!("{}", node))),
+            Node::Intersection(left, right) => Ok(Type::Intersection(
+                Box::new(Type::from_node(*left, scope)?),
+                Box::new(Type::from_node(*right, scope)?),
+            )),
         }
     }
 }
@@ -440,13 +484,13 @@ pub struct InvalidType {
 
 impl Debug for InvalidType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        return write!(f, "InvalidType: {}", self.type_string);
+        write!(f, "InvalidType: {}", self.type_string)
     }
 }
 
 impl Display for InvalidType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        return write!(f, "InvalidType: {}", self.type_string);
+        write!(f, "InvalidType: {}", self.type_string)
     }
 }
 
@@ -464,7 +508,11 @@ pub trait ToType {
 
 impl ToType for str {
     fn to_type(&self, scope: &Scope) -> Result<Type, InvalidType> {
-        Type::from_node(self.to_node().map_err(|parse_error| InvalidType::new(format!("{}", parse_error)))?, scope)
+        Type::from_node(
+            self.to_node()
+                .map_err(|parse_error| InvalidType::new(format!("{}", parse_error)))?,
+            scope,
+        )
     }
 }
 
@@ -503,9 +551,101 @@ fn compare_int(
     sup_min: &Option<isize>,
     sup_max: &Option<isize>,
 ) -> bool {
-    let sub = (sub_min.map_or(isize::MIN, |v| v), sub_max.map_or(isize::MAX, |v| v));
-    let sup = (sup_min.map_or(isize::MIN, |v| v), sup_max.map_or(isize::MAX, |v| v));
-    return sub.0 >= sup.0 && sub.1 <= sup.1;
+    let sub = (
+        sub_min.map_or(isize::MIN, |v| v),
+        sub_max.map_or(isize::MAX, |v| v),
+    );
+    let sup = (
+        sup_min.map_or(isize::MIN, |v| v),
+        sup_max.map_or(isize::MAX, |v| v),
+    );
+    sub.0 >= sup.0 && sub.1 <= sup.1
+}
+
+fn compare_struct_map(sub_members: &Vec<(String, Type, bool)>, sup_value: &Type) -> bool {
+    for (_, sub_type, _) in sub_members {
+        if sub_type.is_subtype_of(sup_value) {
+            continue;
+        }
+        return false;
+    }
+    true
+}
+
+fn intersection_to_map(left: &Type, right: &Type) -> Type {
+    let mut elements = flatten(left.clone());
+    elements.append(&mut flatten(right.clone()));
+    let mut key = Type::Never;
+    let mut value = Type::Never;
+    let mut non_empty = false;
+    for element in elements {
+        if let Type::Struct(members) = element {
+            for (name, type_, optional) in members {
+                key = Type::Union(Box::new(key), Box::new(Type::StringLiteral(name)));
+                value = Type::Union(Box::new(value), Box::new(type_));
+                if !optional {
+                    non_empty = true;
+                }
+            }
+        } else {
+            return Type::Never;
+        }
+    }
+    Type::Map {
+        key: Box::new(key),
+        value: Box::new(value),
+        non_empty,
+    }
+}
+
+fn compare_map_map(sub: &Type, sup: &Type) -> bool {
+    if let Type::Map {
+        key: sub_key,
+        value: sub_value,
+        non_empty: sub_non_empty,
+    } = sub
+    {
+        if let Type::Map {
+            key: sup_key,
+            value: sup_value,
+            non_empty: sup_non_empty,
+        } = &sup
+        {
+            if *sup_non_empty && !*sub_non_empty {
+                return false;
+            }
+            return sub_key.is_subtype_of(sup_key) && sub_value.is_subtype_of(sup_value);
+        }
+    }
+    false
+}
+
+fn compare_classlike_classlike(sub: &Type, sup: &Type) -> bool {
+    match (sub, sup) {
+        (
+            Type::ClassLike {
+                name: sub_name,
+                parameters: sub_parameters,
+                ..
+            },
+            Type::ClassLike {
+                name: sup_name,
+                parameters: sup_parameters,
+                ..
+            },
+        ) if sub_name == sup_name => {
+            for (sub_parameter, sup_parameter) in sub_parameters.iter().zip(sup_parameters) {
+                if !sub_parameter.is_subtype_of(sup_parameter) {
+                    return false;
+                }
+            }
+            true
+        }
+        (Type::ClassLike { parents, .. }, _) => {
+            parents.iter().any(|parent| parent.is_subtype_of(sup))
+        }
+        _ => false,
+    }
 }
 
 impl Type {
@@ -515,21 +655,71 @@ impl Type {
         }
         match (self, sup) {
             (_, Type::Mixed) => true,
-            (Type::Bool(sub_value), Type::Bool(upper_value)) => compare_bool(sub_value, upper_value),
+            (Type::Bool(sub_value), Type::Bool(upper_value)) => {
+                compare_bool(sub_value, upper_value)
+            }
             (_, Type::Union(left, right)) => self.is_subtype_of(left) || self.is_subtype_of(right),
-            (Type::Bool(_) | Type::Int { .. } | Type::Float | Type::String(_) | Type::IntLiteral(_) | Type::StringLiteral(_) | Type::ClassString(_), Type::Scalar) => true,
+            (
+                Type::Bool(_)
+                | Type::Int { .. }
+                | Type::Float
+                | Type::String(_)
+                | Type::IntLiteral(_)
+                | Type::StringLiteral(_)
+                | Type::ClassString(_),
+                Type::Scalar,
+            ) => true,
             (Type::String(_), Type::String(None)) => true,
             (
-                Type::Callable { parameters: sub_parameters, return_type: sub_return_type },
-                Type::Callable { parameters: super_parameters, return_type: super_return_type }
-            ) => {
-                compare_callable(sub_parameters, super_parameters, sub_return_type, super_return_type)
-            }
+                Type::Callable {
+                    parameters: sub_parameters,
+                    return_type: sub_return_type,
+                },
+                Type::Callable {
+                    parameters: super_parameters,
+                    return_type: super_return_type,
+                },
+            ) => compare_callable(
+                sub_parameters,
+                super_parameters,
+                sub_return_type,
+                super_return_type,
+            ),
             (_, Type::Void) => true,
             (Type::Int { min: _, max: _ }, Type::Float) => true,
-            (Type::Int { min: sub_min, max: sub_max }, Type::Int { min: sup_min, max: sup_max }) => compare_int(sub_min, sub_max, sup_min, sup_max),
-            (Type::Int { min, max }, Type::IntLiteral(value)) => min.map_or(false, |min| min == *value) && max.map_or(false, |max| max == *value),
+            (
+                Type::Int {
+                    min: sub_min,
+                    max: sub_max,
+                },
+                Type::Int {
+                    min: sup_min,
+                    max: sup_max,
+                },
+            ) => compare_int(sub_min, sub_max, sup_min, sup_max),
+            (Type::Int { min, max }, Type::IntLiteral(value)) => {
+                min.map_or(false, |min| min == *value) && max.map_or(false, |max| max == *value)
+            }
             (Type::IntLiteral(_), Type::Float | Type::Int { .. }) => true,
+            (
+                Type::Struct(sub_members),
+                Type::Map {
+                    key: _,
+                    value,
+                    non_empty: _,
+                },
+            ) => compare_struct_map(sub_members, value),
+            (
+                Type::Intersection(left, right),
+                Type::Map {
+                    key: _,
+                    value: _,
+                    non_empty: _,
+                },
+            ) => compare_map_map(&intersection_to_map(left, right), sup),
+            (Type::ClassLike { .. }, Type::ClassLike { .. }) => {
+                compare_classlike_classlike(self, sup)
+            }
             (_, _) => false,
         }
     }

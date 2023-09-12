@@ -1,12 +1,12 @@
+use crate::lexer::{lex, Token};
+use crate::r#type::{InvalidType, Type};
+use crate::scope::Scope;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::iter::Peekable;
 use std::slice::Iter;
-use crate::lexer::{lex, Token};
-use crate::r#type::{InvalidType, Type};
-use crate::scope::Scope;
 
 type Tokens<'a> = Peekable<Iter<'a, Token>>;
 
@@ -120,7 +120,9 @@ impl Display for Node {
 
 impl ParseError {
     fn unexpected_end_of_input() -> Self {
-        ParseError { message: "Unexpected end of input".to_string() }
+        ParseError {
+            message: "Unexpected end of input".to_string(),
+        }
     }
     fn unexpected_token(token: &Token, expected: Option<Vec<&Token>>) -> Self {
         let mut message = format!("Unexpected token {:?}", token);
@@ -153,7 +155,7 @@ fn skip_whitespace(tokens: &mut Peekable<Iter<Token>>) {
 }
 
 fn parse_callable_param(tokens: &mut Peekable<Iter<Token>>) -> Option<Parameter> {
-    let param_type = match ast_from_string(tokens) {
+    let param_type = match node_from_string(tokens) {
         Ok(node) => node,
         Err(_) => return None,
     };
@@ -170,7 +172,10 @@ fn parse_callable_param(tokens: &mut Peekable<Iter<Token>>) -> Option<Parameter>
     skip_whitespace(tokens);
     skip(Token::Comma, tokens);
     skip_whitespace(tokens);
-    Some(Parameter { type_node: param_type, optional })
+    Some(Parameter {
+        type_node: param_type,
+        optional,
+    })
 }
 
 fn parse_callable_params(tokens: &mut Peekable<Iter<Token>>) -> Vec<Parameter> {
@@ -182,7 +187,7 @@ fn parse_callable_params(tokens: &mut Peekable<Iter<Token>>) -> Vec<Parameter> {
             Some(token) => match token {
                 Token::CloseParen => break,
                 _ => {}
-            }
+            },
         }
         match parse_callable_param(tokens) {
             Some(parameter) => parameters.push(parameter),
@@ -210,7 +215,7 @@ fn parse_callable(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, ParseError
         Some(token) => match token {
             Token::OpenParen => token,
             _ => return Ok(Node::Callable(None, Vec::new())),
-        }
+        },
     };
     tokens.next();
     let parameters = parse_callable_params(tokens);
@@ -221,7 +226,7 @@ fn parse_callable(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, ParseError
         Some(token) => match token {
             Token::Colon => {
                 tokens.next();
-                Some(Box::new(ast_from_string(tokens)?))
+                Some(Box::new(node_from_string(tokens)?))
             }
             _ => None,
         },
@@ -237,7 +242,7 @@ fn parse_tuple_member(tokens: &mut Peekable<Iter<Token>>) -> Option<Node> {
     if let Token::CloseBrace = tokens.peek()? {
         return None;
     }
-    let member_type = match ast_from_string(tokens) {
+    let member_type = match node_from_string(tokens) {
         Ok(node) => node,
         Err(_) => return None,
     };
@@ -250,7 +255,7 @@ fn parse_tuple_member(tokens: &mut Peekable<Iter<Token>>) -> Option<Node> {
                 member_type
             }
             _ => member_type,
-        }
+        },
     })
 }
 
@@ -286,14 +291,21 @@ fn skip(expected: Token, tokens: &mut Peekable<Iter<Token>>) {
 // Parses this:
 // array{ foo?: string, bar: string, ... }
 //                     =============
-fn parse_struct_member(tokens: &mut Peekable<Iter<Token>>) -> Result<Option<(String, StructMember)>, ParseError> {
+fn parse_struct_member(
+    tokens: &mut Peekable<Iter<Token>>,
+) -> Result<Option<(String, StructMember)>, ParseError> {
     skip_whitespace(tokens);
     let name = match tokens.peek() {
         None => return Ok(None),
         Some(token) => match token {
             Token::CloseBrace => return Ok(None),
             Token::Identifier(name) => name,
-            _ => return Err(ParseError::unexpected_token(token, Some(vec![&Token::Identifier("".to_string())]))),
+            _ => {
+                return Err(ParseError::unexpected_token(
+                    token,
+                    Some(vec![&Token::Identifier("".to_string())]),
+                ))
+            }
         },
     };
     tokens.next();
@@ -305,26 +317,47 @@ fn parse_struct_member(tokens: &mut Peekable<Iter<Token>>) -> Result<Option<(Str
                 true
             }
             Token::Colon => false,
-            _ => return Err(ParseError::unexpected_token(token, Some(vec![&Token::Colon, &Token::QuestionMark]))),
+            _ => {
+                return Err(ParseError::unexpected_token(
+                    token,
+                    Some(vec![&Token::Colon, &Token::QuestionMark]),
+                ))
+            }
         },
     };
     skip_whitespace(tokens);
     expect(Token::Colon, tokens)?;
     skip_whitespace(tokens);
-    let member_type = ast_from_string(tokens)?;
+    let member_type = node_from_string(tokens)?;
     skip_whitespace(tokens);
     skip(Token::Comma, tokens);
-    Ok(Some((name.clone(), StructMember { type_node: member_type, optional })))
+    Ok(Some((
+        name.clone(),
+        StructMember {
+            type_node: member_type,
+            optional,
+        },
+    )))
 }
 
 // Parses this:
 // array{ foo?: string, bar: string, ... }
 //             ===========================
-fn parse_struct(first_name: String, first_is_optional: bool, tokens: &mut Peekable<Iter<Token>>) -> Result<Node, ParseError> {
+fn parse_struct(
+    first_name: String,
+    first_is_optional: bool,
+    tokens: &mut Peekable<Iter<Token>>,
+) -> Result<Node, ParseError> {
     skip_whitespace(tokens);
-    let first_type = ast_from_string(tokens)?;
+    let first_type = node_from_string(tokens)?;
     let mut members = HashMap::new();
-    members.insert(first_name, StructMember { type_node: first_type, optional: first_is_optional });
+    members.insert(
+        first_name,
+        StructMember {
+            type_node: first_type,
+            optional: first_is_optional,
+        },
+    );
     skip_whitespace(tokens);
     skip(Token::Comma, tokens);
     loop {
@@ -335,6 +368,8 @@ fn parse_struct(first_name: String, first_is_optional: bool, tokens: &mut Peekab
             }
         }
     }
+    skip_whitespace(tokens);
+    expect(Token::CloseBrace, tokens)?;
     Ok(Node::Struct(members))
 }
 
@@ -351,10 +386,10 @@ fn parse_braced_array(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, ParseE
                 tokens.next();
                 return Ok(Node::Tuple(Vec::new()));
             }
-            _ => token
-        }
+            _ => token,
+        },
     };
-    let first_type = ast_from_string(tokens)?;
+    let first_type = node_from_string(tokens)?;
     match first_type {
         Node::Identifier(name, params) => match params.is_empty() {
             true => match tokens.next() {
@@ -367,27 +402,30 @@ fn parse_braced_array(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, ParseE
                     }
                     Token::Colon => parse_struct(name, false, tokens),
                     Token::CloseBrace => Ok(Node::Tuple(vec![Node::Identifier(name, params)])),
-                    _ => Err(ParseError::unexpected_token(token, Some(vec![
-                        &Token::Comma,
-                        &Token::QuestionMark,
-                        &Token::Colon,
-                        &Token::CloseBrace,
-                    ]))),
-                }
+                    _ => Err(ParseError::unexpected_token(
+                        token,
+                        Some(vec![
+                            &Token::Comma,
+                            &Token::QuestionMark,
+                            &Token::Colon,
+                            &Token::CloseBrace,
+                        ]),
+                    )),
+                },
             },
             false => parse_tuple(Node::Identifier(name, params), tokens),
-        }
+        },
         _ => match tokens.next() {
             None => Err(ParseError::unexpected_end_of_input()),
             Some(token) => match token {
                 Token::Comma => parse_tuple(first_type, tokens),
                 Token::CloseBrace => Ok(Node::Tuple(vec![first_type])),
-                _ => Err(ParseError::unexpected_token(token, Some(vec![
-                    &Token::Comma,
-                    &Token::CloseBrace,
-                ]))),
-            }
-        }
+                _ => Err(ParseError::unexpected_token(
+                    token,
+                    Some(vec![&Token::Comma, &Token::CloseBrace]),
+                )),
+            },
+        },
     }
 }
 
@@ -398,7 +436,7 @@ fn parse_type_param(tokens: &mut Peekable<Iter<Token>>) -> Option<Node> {
     skip_whitespace(tokens);
     skip(Token::Comma, tokens);
     skip_whitespace(tokens);
-    match ast_from_string(tokens) {
+    match node_from_string(tokens) {
         Ok(type_param) => Some(type_param),
         Err(_) => None,
     }
@@ -421,7 +459,7 @@ fn parse_type_params(tokens: &mut Tokens) -> Result<Vec<Node>, ParseError> {
             Some(token) => match token {
                 Token::CloseAngle => break,
                 _ => (),
-            }
+            },
         }
     }
     expect(Token::CloseAngle, tokens)?;
@@ -434,7 +472,7 @@ fn parse_identifier(name: String, tokens: &mut Peekable<Iter<Token>>) -> Result<
         Some(token) => match token {
             Token::OpenAngle => parse_type_params(tokens)?,
             _ => return Ok(Node::Identifier(name, Vec::new())),
-        }
+        },
     };
     Ok(Node::Identifier(name, type_params))
 }
@@ -447,7 +485,7 @@ fn parse_array(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, ParseError> {
             Token::OpenAngle => parse_identifier("array".to_string(), tokens),
             Token::OpenBrace => parse_braced_array(tokens),
             _ => Ok(Node::Identifier("array".to_string(), Vec::new())),
-        }
+        },
     }
 }
 
@@ -456,26 +494,35 @@ fn parse_integer(tokens: &mut Tokens) -> Result<isize, ParseError> {
         None => Err(ParseError::unexpected_end_of_input()),
         Some(token) => match token {
             Token::Integer(value) => Ok(*value),
-            _ => Err(ParseError::unexpected_token(token, Some(vec![&Token::Integer(0)]))),
-        }
+            _ => Err(ParseError::unexpected_token(
+                token,
+                Some(vec![&Token::Integer(0)]),
+            )),
+        },
     }
 }
 
 fn parse_union(left: Option<Node>, tokens: &mut Tokens) -> Result<Node, ParseError> {
     match left {
         None => Err(ParseError::unexpected_token(&Token::Pipe, None)),
-        Some(left) => Ok(Node::Union(Box::new(left), Box::new(ast_from_string(tokens)?))),
+        Some(left) => Ok(Node::Union(
+            Box::new(left),
+            Box::new(node_from_string(tokens)?),
+        )),
     }
 }
 
 fn parse_intersection(left: Option<Node>, tokens: &mut Tokens) -> Result<Node, ParseError> {
     match left {
         None => Err(ParseError::unexpected_token(&Token::Ampersand, None)),
-        Some(left) => Ok(Node::Intersection(Box::new(left), Box::new(ast_from_string(tokens)?))),
+        Some(left) => Ok(Node::Intersection(
+            Box::new(left),
+            Box::new(node_from_string(tokens)?),
+        )),
     }
 }
 
-pub fn ast_from_string(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, ParseError> {
+pub fn node_from_string(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, ParseError> {
     skip_whitespace(tokens);
     let mut node: Option<Node> = None;
     loop {
@@ -494,14 +541,19 @@ pub fn ast_from_string(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, Parse
             Token::String(value) => Node::StringLiteral((*value).clone()),
             Token::Pipe => parse_union(node, tokens)?,
             Token::Ampersand => parse_intersection(node, tokens)?,
-            _ => return Err(ParseError::unexpected_token(token, Some(vec![
-                &Token::Identifier("".to_string()),
-                &Token::Integer(0),
-                &Token::Minus,
-                &Token::String("".to_string()),
-                &Token::Pipe,
-                &Token::Ampersand,
-            ]))),
+            _ => {
+                return Err(ParseError::unexpected_token(
+                    token,
+                    Some(vec![
+                        &Token::Identifier("".to_string()),
+                        &Token::Integer(0),
+                        &Token::Minus,
+                        &Token::String("".to_string()),
+                        &Token::Pipe,
+                        &Token::Ampersand,
+                    ]),
+                ))
+            }
         });
         skip_whitespace(tokens);
         match tokens.peek() {
@@ -510,14 +562,14 @@ pub fn ast_from_string(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, Parse
                 Token::Pipe => continue,
                 Token::Ampersand => continue,
                 _ => return Ok(node.unwrap()),
-            }
+            },
         }
     }
 }
 
 pub fn parse(type_string: &str) -> Result<Node, ParseError> {
     let tokens = lex(&mut type_string.chars().peekable());
-    ast_from_string(&mut tokens.iter().peekable())
+    node_from_string(&mut tokens.iter().peekable())
 }
 
 pub trait ToNode {
@@ -538,5 +590,5 @@ impl ToNode for String {
 
 pub fn parse_type(str: &str, scope: &Scope) -> Result<Type, InvalidType> {
     let node = parse(str).map_err(|_| InvalidType::new(String::from(str)))?;
-    Ok(Type::from_node(node, scope)?)
+    Type::from_node(node, scope)
 }

@@ -1,4 +1,4 @@
-use std::fmt::{Debug};
+use std::fmt::{Debug, Display, Formatter};
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -21,6 +21,30 @@ pub enum Token {
     Identifier(String),
     Equals,
     Minus,
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Token::String(string) => write!(f, "'{}'", string),
+            Token::Integer(integer) => write!(f, "{}", integer),
+            Token::Whitespace => write!(f, " "),
+            Token::OpenAngle => write!(f, "<"),
+            Token::CloseAngle => write!(f, ">"),
+            Token::Colon => write!(f, ":"),
+            Token::Comma => write!(f, ","),
+            Token::OpenParen => write!(f, "("),
+            Token::CloseParen => write!(f, ")"),
+            Token::OpenBrace => write!(f, "{{"),
+            Token::CloseBrace => write!(f, "}}"),
+            Token::Pipe => write!(f, "|"),
+            Token::Ampersand => write!(f, "&"),
+            Token::QuestionMark => write!(f, "?"),
+            Token::Identifier(identifier) => write!(f, "{}", identifier),
+            Token::Equals => write!(f, "="),
+            Token::Minus => write!(f, "-"),
+        }
+    }
 }
 
 impl Token {
@@ -101,7 +125,8 @@ fn parse_string(chars: &mut Peekable<Chars>) -> Token {
     Token::String(string)
 }
 
-const NON_IDENTIFIER_CHARS: [char; 12] = ['<', '>', ':', ',', '(', ')', '{', '}', '|', '&', '?', '='];
+const NON_IDENTIFIER_CHARS: [char; 12] =
+    ['<', '>', ':', ',', '(', ')', '{', '}', '|', '&', '?', '='];
 
 fn is_identifier_char(char: char) -> bool {
     !NON_IDENTIFIER_CHARS.contains(&char)
