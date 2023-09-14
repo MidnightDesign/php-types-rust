@@ -1,4 +1,4 @@
-use crate::r#type::Type;
+use crate::r#type::{Int, Type};
 use std::collections::HashMap;
 use std::string::String;
 
@@ -13,10 +13,10 @@ impl Scope {
         types.insert(
             String::from("array-key"),
             Type::Union(
-                Box::new(Type::Int {
+                Box::new(Type::Int(Int {
                     min: None,
                     max: None,
-                }),
+                })),
                 Box::new(Type::String(None)),
             ),
         );
@@ -32,7 +32,7 @@ impl Scope {
 
     pub fn lookup(&self, name: &String) -> Option<&Type> {
         match self.types.get(name) {
-            Some(ty) => Some(&ty),
+            Some(ty) => Some(ty),
             None => match &self.parent {
                 Some(parent) => parent.lookup(name),
                 None => None,

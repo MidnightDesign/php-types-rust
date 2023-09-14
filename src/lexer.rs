@@ -183,12 +183,14 @@ pub fn lex(chars: &mut Peekable<Chars>) -> Vec<Token> {
                     '-' => Some(Token::Minus),
                     _ => None,
                 };
-                if token.is_some() {
-                    tokens.push(token.unwrap());
-                    chars.next();
-                    continue;
+                match token {
+                    Some(t) => {
+                        tokens.push(t);
+                        chars.next();
+                        continue;
+                    }
+                    None => tokens.push(parse_identifier(chars)),
                 }
-                tokens.push(parse_identifier(chars));
             }
         }
     }

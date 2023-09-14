@@ -1,3 +1,4 @@
+pub mod compatibility;
 mod lexer;
 pub mod parser;
 pub mod scope;

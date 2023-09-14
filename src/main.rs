@@ -1,10 +1,11 @@
+mod compatibility;
 mod lexer;
 mod parser;
 mod scope;
 mod r#type;
 
 use crate::parser::parse_type;
-use crate::r#type::{ToType, Type};
+use crate::r#type::Type;
 use crate::scope::Scope;
 
 fn main() {
@@ -27,7 +28,12 @@ fn main() {
     scope.register(String::from("FooInterface"), foo_interface);
     scope.register(String::from("Foo"), foo);
     scope.register(String::from("Bar"), bar);
-    let sub = parse_type("FooInterface", &scope).unwrap();
-    let sup = parse_type("FooInterface", &scope).unwrap();
-    println!("{}", sub.is_subtype_of(&sup));
+    let sub = parse_type("list<string>", &scope).unwrap();
+    let sup = parse_type("array<array-key, mixed>", &scope).unwrap();
+    println!(
+        "{} is a subtype of {}: {}",
+        sub,
+        sup,
+        sub.is_subtype_of(&sup)
+    );
 }

@@ -1,4 +1,4 @@
-use crate::parser::{Node, Parameter, StructMember, ToNode};
+use crate::parser::{Node, Parameter, StructMember as NodeStructMember, ToNode};
 use crate::scope::Scope;
 use std::collections::HashMap;
 use std::error::Error;
@@ -6,12 +6,46 @@ use std::fmt::{Debug, Display, Formatter};
 use std::string::String;
 
 #[derive(PartialEq, Clone)]
+pub struct Map {
+    pub key: Box<Type>,
+    pub value: Box<Type>,
+    pub non_empty: bool,
+}
+
+#[derive(PartialEq, Clone)]
+pub struct Callable {
+    pub parameters: Vec<Param>,
+    pub return_type: Box<Type>,
+}
+
+#[derive(PartialEq, Clone)]
+pub struct Int {
+    pub min: Option<isize>,
+    pub max: Option<isize>,
+}
+
+#[derive(PartialEq, Clone)]
+pub struct Iterable {
+    pub key: Box<Type>,
+    pub value: Box<Type>,
+}
+
+#[derive(PartialEq, Clone)]
+pub struct List {
+    pub type_: Box<Type>,
+    pub non_empty: bool,
+}
+
+#[derive(PartialEq, Clone)]
+pub struct StructMember {
+    pub type_: Type,
+    pub optional: bool,
+}
+
+#[derive(PartialEq, Clone)]
 pub enum Type {
     Bool(Option<bool>),
-    Callable {
-        parameters: Vec<Param>,
-        return_type: Box<Type>,
-    },
+    Callable(Callable),
     ClassLike {
         name: String,
         parameters: Vec<Type>,
@@ -19,25 +53,12 @@ pub enum Type {
     },
     ClassString(Option<Box<Type>>),
     Float,
-    Int {
-        min: Option<isize>,
-        max: Option<isize>,
-    },
+    Int(Int),
     Intersection(Box<Type>, Box<Type>),
     IntLiteral(isize),
-    Iterable {
-        key: Box<Type>,
-        value: Box<Type>,
-    },
-    List {
-        type_: Box<Type>,
-        non_empty: bool,
-    },
-    Map {
-        key: Box<Type>,
-        value: Box<Type>,
-        non_empty: bool,
-    },
+    Iterable(Iterable),
+    List(List),
+    Map(Map),
     Mixed,
     Never,
     Null,
@@ -45,7 +66,7 @@ pub enum Type {
     Scalar,
     String(Option<StringFlag>),
     StringLiteral(String),
-    Struct(Vec<(String, Type, bool)>),
+    Struct(HashMap<String, StructMember>),
     Tuple(Vec<Type>),
     Union(Box<Type>, Box<Type>),
     Void,
@@ -79,11 +100,11 @@ impl Display for Type {
                 }
             }
             Type::Intersection(left, right) => write!(f, "{} & {}", left, right),
-            Type::Map {
+            Type::Map(Map {
                 key,
                 value,
                 non_empty,
-            } => {
+            }) => {
                 if *non_empty {
                     write!(f, "non-empty-array<")?;
                 } else {
@@ -99,7 +120,7 @@ impl Display for Type {
                 Some(StringFlag::NonEmpty) => write!(f, "non-empty-string"),
                 Some(StringFlag::Numeric) => write!(f, "numeric-string"),
             },
-            Type::Int { min, max } => match (min, max) {
+            Type::Int(Int { min, max }) => match (min, max) {
                 (None, None) => write!(f, "int"),
                 (Some(min), None) => write!(f, "int<{}, max>", min),
                 (None, Some(max)) => write!(f, "int<max, {}>", max),
@@ -112,8 +133,8 @@ impl Display for Type {
             Type::Scalar => write!(f, "scalar"),
             Type::Float => write!(f, "float"),
             Type::IntLiteral(value) => write!(f, "{}", value),
-            Type::Iterable { key, value } => write!(f, "iterable<{}, {}>", key, value),
-            Type::List { type_, non_empty } => {
+            Type::Iterable(Iterable { key, value }) => write!(f, "iterable<{}, {}>", key, value),
+            Type::List(List { type_, non_empty }) => {
                 if *non_empty {
                     write!(f, "non-empty-list<")?;
                 } else {
@@ -125,10 +146,10 @@ impl Display for Type {
             Type::Null => write!(f, "null"),
             Type::Resource => write!(f, "resource"),
             Type::Void => write!(f, "void"),
-            Type::Callable {
+            Type::Callable(Callable {
                 parameters,
                 return_type,
-            } => {
+            }) => {
                 write!(f, "callable(")?;
                 for (i, param) in parameters.iter().enumerate() {
                     if i > 0 {
@@ -143,7 +164,7 @@ impl Display for Type {
             }
             Type::Struct(members) => {
                 write!(f, "array{{")?;
-                for (i, (name, type_, optional)) in members.iter().enumerate() {
+                for (i, (name, StructMember { type_, optional })) in members.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
@@ -172,27 +193,27 @@ impl Display for Type {
 
 fn int(parameters: Vec<Node>) -> Result<Type, InvalidType> {
     match parameters.as_slice() {
-        [] => Ok(Type::Int {
+        [] => Ok(Type::Int(Int {
             min: None,
             max: None,
-        }),
+        })),
         [min, max] => match (min, max) {
-            (Node::IntLiteral(min), Node::IntLiteral(max)) => Ok(Type::Int {
+            (Node::IntLiteral(min), Node::IntLiteral(max)) => Ok(Type::Int(Int {
                 min: Some(*min),
                 max: Some(*max),
-            }),
+            })),
             (Node::Identifier(min, _), Node::IntLiteral(max)) => match min.as_str() {
-                "min" => Ok(Type::Int {
+                "min" => Ok(Type::Int(Int {
                     min: None,
                     max: Some(*max),
-                }),
+                })),
                 _ => Err(InvalidType::new(format!("int<{}, {}>", min, max))),
             },
             (Node::IntLiteral(min), Node::Identifier(max, _)) => match max.as_str() {
-                "max" => Ok(Type::Int {
+                "max" => Ok(Type::Int(Int {
                     min: Some(*min),
                     max: None,
-                }),
+                })),
                 _ => Err(InvalidType::new(format!("int<{}, {}>", min, max))),
             },
             _ => Err(InvalidType::new(format!("int<{}, {}>", min, max))),
@@ -213,22 +234,20 @@ fn comma_separated_nodes(nodes: Vec<Node>) -> String {
 }
 
 fn array(mut parameters: Vec<Node>, non_empty: bool, scope: &Scope) -> Result<Type, InvalidType> {
-    let array_key = Type::Union(
-        Box::new(Type::Int {
-            min: None,
-            max: None,
-        }),
-        Box::new(Type::String(None)),
-    );
+    let array_key = scope
+        .lookup(&String::from("array-key"))
+        .ok_or(InvalidType::new(
+            "array-key not found in global scope".to_string(),
+        ))?;
     let (key, value) = match parameters.len() {
-        0 => (array_key, Type::Mixed),
+        0 => (array_key.clone(), Type::Mixed),
         1 => {
             let value = parameters.pop().unwrap();
-            (array_key, Type::from_node(value, scope)?)
+            (array_key.clone(), Type::from_node(value, scope)?)
         }
         2 => {
-            let key = parameters.pop().unwrap();
             let value = parameters.pop().unwrap();
+            let key = parameters.pop().unwrap();
             (Type::from_node(key, scope)?, Type::from_node(value, scope)?)
         }
         _ => {
@@ -238,11 +257,11 @@ fn array(mut parameters: Vec<Node>, non_empty: bool, scope: &Scope) -> Result<Ty
             )));
         }
     };
-    Ok(Type::Map {
+    Ok(Type::Map(Map {
         key: Box::new(key),
         value: Box::new(value),
         non_empty,
-    })
+    }))
 }
 
 fn list<'a>(
@@ -263,10 +282,10 @@ fn list<'a>(
             )));
         }
     };
-    Ok(Type::List {
+    Ok(Type::List(List {
         type_: Box::new(value_type),
         non_empty,
-    })
+    }))
 }
 
 pub fn iterable<'a>(mut parameters: Vec<Node>, scope: &Scope) -> Result<Type, InvalidType> {
@@ -277,8 +296,8 @@ pub fn iterable<'a>(mut parameters: Vec<Node>, scope: &Scope) -> Result<Type, In
             (Type::Mixed, Type::from_node(value, scope)?)
         }
         2 => {
-            let key = parameters.pop().unwrap();
             let value = parameters.pop().unwrap();
+            let key = parameters.pop().unwrap();
             (Type::from_node(key, scope)?, Type::from_node(value, scope)?)
         }
         _ => {
@@ -288,10 +307,10 @@ pub fn iterable<'a>(mut parameters: Vec<Node>, scope: &Scope) -> Result<Type, In
             )));
         }
     };
-    Ok(Type::Iterable {
+    Ok(Type::Iterable(Iterable {
         key: Box::new(key),
         value: Box::new(value),
-    })
+    }))
 }
 
 pub fn callable<'a>(
@@ -306,13 +325,13 @@ pub fn callable<'a>(
             parameter.optional,
         ));
     }
-    Ok(Type::Callable {
+    Ok(Type::Callable(Callable {
         return_type: Box::new(match return_type {
             Some(return_type) => Type::from_node(return_type, scope)?,
             None => Type::Void,
         }),
         parameters: vec![],
-    })
+    }))
 }
 
 fn no_params<'a>(type_: Type, parameters: Vec<Node>) -> Result<Type, InvalidType> {
@@ -326,15 +345,15 @@ fn no_params<'a>(type_: Type, parameters: Vec<Node>) -> Result<Type, InvalidType
     }
 }
 
-fn flatten(type_: Type) -> Vec<Type> {
-    match type_ {
+pub fn flatten(t: Type) -> Vec<Type> {
+    match t {
         Type::Union(left, right) | Type::Intersection(left, right) => {
             let mut left = flatten(*left);
             let mut right = flatten(*right);
             left.append(&mut right);
             left
         }
-        _ => vec![type_],
+        _ => vec![t],
     }
 }
 
@@ -349,7 +368,7 @@ fn union_from_types<'a>(types: Vec<Type>) -> Type {
     }
 }
 
-fn create_union<'a>(left: Type, right: Type) -> Type {
+pub fn create_union(left: Type, right: Type) -> Type {
     let mut types = flatten(left);
     types.append(&mut flatten(right));
     if types.contains(&&Type::Bool(Some(false))) && types.contains(&&Type::Bool(Some(true))) {
@@ -362,14 +381,19 @@ fn create_union<'a>(left: Type, right: Type) -> Type {
     union_from_types(types)
 }
 
-fn create_struct(members: HashMap<String, StructMember>) -> Result<Type, InvalidType> {
-    let mut struct_members = Vec::new();
+fn create_struct(
+    members: HashMap<String, NodeStructMember>,
+    scope: &Scope,
+) -> Result<Type, InvalidType> {
+    let mut struct_members = HashMap::new();
     for (name, member) in members {
-        struct_members.push((
+        struct_members.insert(
             name,
-            Type::from_node(member.type_node, &Scope::global())?,
-            member.optional,
-        ));
+            StructMember {
+                type_: Type::from_node(member.type_node, scope)?,
+                optional: member.optional,
+            },
+        );
     }
     Ok(Type::Struct(struct_members))
 }
@@ -404,10 +428,10 @@ impl Type {
                 "list" => list(parameters, false, scope),
                 "mixed" => no_params(Type::Mixed, parameters),
                 "negative-int" => no_params(
-                    Type::Int {
+                    Type::Int(Int {
                         min: None,
                         max: Some(-1),
-                    },
+                    }),
                     parameters,
                 ),
                 "never" => no_params(Type::Never, parameters),
@@ -420,10 +444,10 @@ impl Type {
                 "numeric-string" => no_params(Type::String(Some(StringFlag::Numeric)), parameters),
                 "resource" => no_params(Type::Resource, parameters),
                 "positive-int" => no_params(
-                    Type::Int {
+                    Type::Int(Int {
                         min: Some(1),
                         max: None,
-                    },
+                    }),
                     parameters,
                 ),
                 "scalar" => no_params(Type::Scalar, parameters),
@@ -443,7 +467,7 @@ impl Type {
             Node::Callable(return_type, parameters) => {
                 callable(parameters, return_type.map(|t| *t), scope)
             }
-            Node::Struct(members) => create_struct(members),
+            Node::Struct(members) => create_struct(members, scope),
             Node::StringLiteral(value) => Ok(Type::StringLiteral(value)),
             Node::Tuple(elements) => {
                 let mut types = Vec::new();
@@ -516,63 +540,7 @@ impl ToType for str {
     }
 }
 
-pub fn compare_bool(sub_value: &Option<bool>, upper_value: &Option<bool>) -> bool {
-    match (sub_value, upper_value) {
-        (_, None) => true,
-        (None, Some(_)) => false,
-        (Some(sub_value), Some(uper_value)) => sub_value == uper_value,
-    }
-}
-
-pub fn compare_callable(
-    sub_parameters: &[Param],
-    super_parameters: &[Param],
-    sub_return_type: &Type,
-    super_return_type: &Type,
-) -> bool {
-    if !sub_return_type.is_subtype_of(super_return_type) {
-        return false;
-    }
-    for (i, sub_param) in sub_parameters.iter().enumerate() {
-        if i >= super_parameters.len() {
-            return false;
-        }
-        let super_param = &super_parameters[i];
-        if !super_param.type_.is_subtype_of(&sub_param.type_) {
-            return false;
-        }
-    }
-    return true;
-}
-
-fn compare_int(
-    sub_min: &Option<isize>,
-    sub_max: &Option<isize>,
-    sup_min: &Option<isize>,
-    sup_max: &Option<isize>,
-) -> bool {
-    let sub = (
-        sub_min.map_or(isize::MIN, |v| v),
-        sub_max.map_or(isize::MAX, |v| v),
-    );
-    let sup = (
-        sup_min.map_or(isize::MIN, |v| v),
-        sup_max.map_or(isize::MAX, |v| v),
-    );
-    sub.0 >= sup.0 && sub.1 <= sup.1
-}
-
-fn compare_struct_map(sub_members: &Vec<(String, Type, bool)>, sup_value: &Type) -> bool {
-    for (_, sub_type, _) in sub_members {
-        if sub_type.is_subtype_of(sup_value) {
-            continue;
-        }
-        return false;
-    }
-    true
-}
-
-fn intersection_to_map(left: &Type, right: &Type) -> Type {
+pub fn intersection_to_map(left: &Type, right: &Type) -> Type {
     let mut elements = flatten(left.clone());
     elements.append(&mut flatten(right.clone()));
     let mut key = Type::Never;
@@ -580,7 +548,7 @@ fn intersection_to_map(left: &Type, right: &Type) -> Type {
     let mut non_empty = false;
     for element in elements {
         if let Type::Struct(members) = element {
-            for (name, type_, optional) in members {
+            for (name, StructMember { type_, optional }) in members {
                 key = Type::Union(Box::new(key), Box::new(Type::StringLiteral(name)));
                 value = Type::Union(Box::new(value), Box::new(type_));
                 if !optional {
@@ -591,136 +559,77 @@ fn intersection_to_map(left: &Type, right: &Type) -> Type {
             return Type::Never;
         }
     }
-    Type::Map {
+    Type::Map(Map {
         key: Box::new(key),
         value: Box::new(value),
         non_empty,
+    })
+}
+
+fn create_int() -> Type {
+    Type::Int(Int {
+        min: None,
+        max: None,
+    })
+}
+
+pub fn to_iterable(t: &Type) -> Option<Iterable> {
+    let (key, value) = match t {
+        Type::List(List { type_, .. }) => (create_int(), *type_.clone()),
+        Type::Map(Map { key, value, .. }) => (*key.clone(), *value.clone()),
+        Type::Iterable(Iterable { key, value }) => (*key.clone(), *value.clone()),
+        _ => return None,
+    };
+    Some(Iterable {
+        key: Box::new(key),
+        value: Box::new(value),
+    })
+}
+
+fn struct_key_value_types(members: HashMap<String, StructMember>) -> (Type, Type) {
+    let mut key = Type::Never;
+    let mut value = Type::Never;
+    for (name, StructMember { type_, optional }) in members {
+        key = Type::Union(Box::new(key), Box::new(Type::StringLiteral(name)));
+        value = Type::Union(Box::new(value), Box::new(type_));
+        if !optional {
+            value = Type::Union(Box::new(value), Box::new(Type::Null));
+        }
+    }
+    (key, value)
+}
+
+pub fn to_map(t: &Type) -> Option<Map> {
+    match t {
+        Type::Map(map) => Some(map.clone()),
+        Type::List(List { type_, non_empty }) => Some(Map {
+            key: Box::new(create_int()),
+            value: type_.clone(),
+            non_empty: *non_empty,
+        }),
+        Type::Struct(members) => {
+            let (key, value) = struct_key_value_types(members.clone());
+            Some(Map {
+                key: Box::new(key),
+                value: Box::new(value),
+                non_empty: false,
+            })
+        }
+        _ => None,
     }
 }
 
-fn compare_map_map(sub: &Type, sup: &Type) -> bool {
-    if let Type::Map {
-        key: sub_key,
-        value: sub_value,
-        non_empty: sub_non_empty,
-    } = sub
-    {
-        if let Type::Map {
-            key: sup_key,
-            value: sup_value,
-            non_empty: sup_non_empty,
-        } = &sup
-        {
-            if *sup_non_empty && !*sub_non_empty {
-                return false;
-            }
-            return sub_key.is_subtype_of(sup_key) && sub_value.is_subtype_of(sup_value);
-        }
-    }
-    false
-}
-
-fn compare_classlike_classlike(sub: &Type, sup: &Type) -> bool {
-    match (sub, sup) {
-        (
-            Type::ClassLike {
-                name: sub_name,
-                parameters: sub_parameters,
-                ..
-            },
-            Type::ClassLike {
-                name: sup_name,
-                parameters: sup_parameters,
-                ..
-            },
-        ) if sub_name == sup_name => {
-            for (sub_parameter, sup_parameter) in sub_parameters.iter().zip(sup_parameters) {
-                if !sub_parameter.is_subtype_of(sup_parameter) {
-                    return false;
-                }
-            }
-            true
-        }
-        (Type::ClassLike { parents, .. }, _) => {
-            parents.iter().any(|parent| parent.is_subtype_of(sup))
-        }
-        _ => false,
-    }
-}
-
-impl Type {
-    pub fn is_subtype_of(&self, sup: &Type) -> bool {
-        if self == sup {
-            return true;
-        }
-        match (self, sup) {
-            (_, Type::Mixed) => true,
-            (Type::Bool(sub_value), Type::Bool(upper_value)) => {
-                compare_bool(sub_value, upper_value)
-            }
-            (_, Type::Union(left, right)) => self.is_subtype_of(left) || self.is_subtype_of(right),
-            (
-                Type::Bool(_)
-                | Type::Int { .. }
-                | Type::Float
-                | Type::String(_)
-                | Type::IntLiteral(_)
-                | Type::StringLiteral(_)
-                | Type::ClassString(_),
-                Type::Scalar,
-            ) => true,
-            (Type::String(_), Type::String(None)) => true,
-            (
-                Type::Callable {
-                    parameters: sub_parameters,
-                    return_type: sub_return_type,
-                },
-                Type::Callable {
-                    parameters: super_parameters,
-                    return_type: super_return_type,
-                },
-            ) => compare_callable(
-                sub_parameters,
-                super_parameters,
-                sub_return_type,
-                super_return_type,
-            ),
-            (_, Type::Void) => true,
-            (Type::Int { min: _, max: _ }, Type::Float) => true,
-            (
-                Type::Int {
-                    min: sub_min,
-                    max: sub_max,
-                },
-                Type::Int {
-                    min: sup_min,
-                    max: sup_max,
-                },
-            ) => compare_int(sub_min, sub_max, sup_min, sup_max),
-            (Type::Int { min, max }, Type::IntLiteral(value)) => {
-                min.map_or(false, |min| min == *value) && max.map_or(false, |max| max == *value)
-            }
-            (Type::IntLiteral(_), Type::Float | Type::Int { .. }) => true,
-            (
-                Type::Struct(sub_members),
-                Type::Map {
-                    key: _,
-                    value,
-                    non_empty: _,
-                },
-            ) => compare_struct_map(sub_members, value),
-            (
-                Type::Intersection(left, right),
-                Type::Map {
-                    key: _,
-                    value: _,
-                    non_empty: _,
-                },
-            ) => compare_map_map(&intersection_to_map(left, right), sup),
-            (Type::ClassLike { .. }, Type::ClassLike { .. }) => {
-                compare_classlike_classlike(self, sup)
-            }
-            (_, _) => false,
-        }
+pub fn to_list(t: &Type) -> Option<List> {
+    match t {
+        Type::List(list) => Some(list.clone()),
+        Type::Tuple(elements) => Some(List {
+            type_: Box::new(union_from_types(elements.clone())),
+            non_empty: !elements.is_empty(),
+        }),
+        Type::Struct(members) if members.is_empty() => Some(List {
+            type_: Box::new(Type::Never),
+            non_empty: false,
+        }),
+        _ => None,
     }
 }
