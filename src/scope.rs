@@ -1,4 +1,4 @@
-use crate::r#type::{Int, Type};
+use crate::r#type::{plain_int, union_from_types, Int, Type};
 use std::collections::HashMap;
 use std::string::String;
 
@@ -12,13 +12,7 @@ impl Scope {
         let mut types = HashMap::new();
         types.insert(
             String::from("array-key"),
-            Type::Union(
-                Box::new(Type::Int(Int {
-                    min: None,
-                    max: None,
-                })),
-                Box::new(Type::String(None)),
-            ),
+            union_from_types(vec![plain_int(), Type::String(None)]),
         );
         Self {
             types,

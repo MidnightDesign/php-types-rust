@@ -1,6 +1,6 @@
 use crate::parser::{Node, Parameter, StructMember as NodeStructMember, ToNode};
 use crate::scope::Scope;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::string::String;
@@ -128,7 +128,7 @@ impl Display for Type {
             },
             Type::Bool(value) => match value {
                 None => write!(f, "bool"),
-                Some(value) => write!(f, "bool<{}>", value),
+                Some(value) => write!(f, "{}", value),
             },
             Type::Scalar => write!(f, "scalar"),
             Type::Float => write!(f, "float"),
@@ -357,7 +357,7 @@ pub fn flatten(t: Type) -> Vec<Type> {
     }
 }
 
-fn union_from_types<'a>(types: Vec<Type>) -> Type {
+pub fn union_from_types(types: Vec<Type>) -> Type {
     match types.as_slice() {
         [] => Type::Never,
         [type_] => (*type_).clone(),
@@ -371,11 +371,8 @@ fn union_from_types<'a>(types: Vec<Type>) -> Type {
 pub fn create_union(left: Type, right: Type) -> Type {
     let mut types = flatten(left);
     types.append(&mut flatten(right));
-    if types.contains(&&Type::Bool(Some(false))) && types.contains(&&Type::Bool(Some(true))) {
-        types.retain(|type_| match type_ {
-            Type::Bool(_) => false,
-            _ => true,
-        });
+    if types.contains(&Type::Bool(Some(false))) && types.contains(&Type::Bool(Some(true))) {
+        types.retain(|type_| !matches!(type_, Type::Bool(_)));
         types.push(Type::Bool(None));
     }
     union_from_types(types)
@@ -412,6 +409,30 @@ fn class_string(mut parameters: Vec<Node>, scope: &Scope) -> Result<Type, Invali
             comma_separated_nodes(parameters)
         ))),
     }
+}
+
+fn intersect_structs(
+    left: &HashMap<String, StructMember>,
+    right: &HashMap<String, StructMember>,
+) -> Type {
+    let keys: HashSet<&String> =
+        HashSet::from_iter(left.keys().into_iter().chain(right.keys().into_iter()));
+    let mut members = HashMap::new();
+    for key in keys {
+        let left_member = left.get(key);
+        let right_member = right.get(key);
+        let member = match (left_member, right_member) {
+            (None, None) => continue,
+            (Some(member), None) => member.clone(),
+            (None, Some(member)) => member.clone(),
+            (Some(left_member), Some(right_member)) => StructMember {
+                type_: Type::intersect(left_member.type_.clone(), right_member.type_.clone()),
+                optional: left_member.optional && right_member.optional,
+            },
+        };
+        members.insert(key.clone(), member);
+    }
+    Type::Struct(members)
 }
 
 impl Type {
@@ -476,10 +497,20 @@ impl Type {
                 }
                 Ok(Type::Tuple(types))
             }
-            Node::Intersection(left, right) => Ok(Type::Intersection(
-                Box::new(Type::from_node(*left, scope)?),
-                Box::new(Type::from_node(*right, scope)?),
+            Node::Intersection(left, right) => Ok(Type::intersect(
+                Type::from_node(*left, scope)?,
+                Type::from_node(*right, scope)?,
             )),
+        }
+    }
+
+    pub fn intersect(left: Type, right: Type) -> Type {
+        if left == right {
+            return left;
+        }
+        match (&left, &right) {
+            (Type::Struct(left), Type::Struct(right)) => intersect_structs(left, right),
+            _ => Type::Intersection(Box::new(left), Box::new(right)),
         }
     }
 }
@@ -549,8 +580,8 @@ pub fn intersection_to_map(left: &Type, right: &Type) -> Type {
     for element in elements {
         if let Type::Struct(members) = element {
             for (name, StructMember { type_, optional }) in members {
-                key = Type::Union(Box::new(key), Box::new(Type::StringLiteral(name)));
-                value = Type::Union(Box::new(value), Box::new(type_));
+                key = union_from_types(vec![key, Type::StringLiteral(name)]);
+                value = union_from_types(vec![value, type_]);
                 if !optional {
                     non_empty = true;
                 }
@@ -566,7 +597,7 @@ pub fn intersection_to_map(left: &Type, right: &Type) -> Type {
     })
 }
 
-fn create_int() -> Type {
+pub fn plain_int() -> Type {
     Type::Int(Int {
         min: None,
         max: None,
@@ -575,9 +606,17 @@ fn create_int() -> Type {
 
 pub fn to_iterable(t: &Type) -> Option<Iterable> {
     let (key, value) = match t {
-        Type::List(List { type_, .. }) => (create_int(), *type_.clone()),
+        Type::List(List { type_, .. }) => (plain_int(), *type_.clone()),
         Type::Map(Map { key, value, .. }) => (*key.clone(), *value.clone()),
         Type::Iterable(Iterable { key, value }) => (*key.clone(), *value.clone()),
+        Type::Struct(members) => struct_key_value_types(members.clone()),
+        Type::Tuple(elements) => (
+            Type::Int(Int {
+                min: Some(0),
+                max: None,
+            }),
+            union_from_types(elements.clone()),
+        ),
         _ => return None,
     };
     Some(Iterable {
@@ -589,12 +628,9 @@ pub fn to_iterable(t: &Type) -> Option<Iterable> {
 fn struct_key_value_types(members: HashMap<String, StructMember>) -> (Type, Type) {
     let mut key = Type::Never;
     let mut value = Type::Never;
-    for (name, StructMember { type_, optional }) in members {
-        key = Type::Union(Box::new(key), Box::new(Type::StringLiteral(name)));
-        value = Type::Union(Box::new(value), Box::new(type_));
-        if !optional {
-            value = Type::Union(Box::new(value), Box::new(Type::Null));
-        }
+    for (name, StructMember { type_, .. }) in members {
+        key = union_from_types(vec![key, Type::StringLiteral(name)]);
+        value = union_from_types(vec![value, type_]);
     }
     (key, value)
 }
@@ -603,7 +639,7 @@ pub fn to_map(t: &Type) -> Option<Map> {
     match t {
         Type::Map(map) => Some(map.clone()),
         Type::List(List { type_, non_empty }) => Some(Map {
-            key: Box::new(create_int()),
+            key: Box::new(plain_int()),
             value: type_.clone(),
             non_empty: *non_empty,
         }),
@@ -615,6 +651,11 @@ pub fn to_map(t: &Type) -> Option<Map> {
                 non_empty: false,
             })
         }
+        Type::Tuple(elements) => Some(Map {
+            key: Box::new(plain_int()),
+            value: Box::new(union_from_types(elements.clone())),
+            non_empty: !elements.is_empty(),
+        }),
         _ => None,
     }
 }
