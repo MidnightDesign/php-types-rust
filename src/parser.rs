@@ -4,7 +4,7 @@ use crate::scope::Scope;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
-use std::fmt::{format, Debug, Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::iter::Peekable;
 use std::slice::Iter;
 

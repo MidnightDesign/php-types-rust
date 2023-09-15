@@ -48,7 +48,7 @@ impl Display for Token {
 }
 
 impl Token {
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> &'static str {
         match self {
             Token::String(_) => "string",
             Token::Integer(_) => "integer",

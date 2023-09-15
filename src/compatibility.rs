@@ -1,6 +1,6 @@
 use crate::r#type::{
     flatten, intersection_to_map, to_iterable, to_list, to_map, Callable, Int, Iterable, List, Map,
-    Param, StringFlag, StructMember, Type,
+    StringFlag, StructMember, Type,
 };
 use std::collections::HashMap;
 
@@ -157,6 +157,19 @@ fn compare_structs(
     true
 }
 
+fn compare_tuples(sub: &Vec<Type>, sup: &Vec<Type>) -> bool {
+    if sub.len() < sup.len() {
+        return false;
+    }
+    for (sub, sup) in sub.iter().zip(sup) {
+        if sub.is_subtype_of(sup) {
+            continue;
+        }
+        return false;
+    }
+    true
+}
+
 impl Type {
     pub fn is_subtype_of(&self, sup: &Type) -> bool {
         if self == sup {
@@ -195,15 +208,15 @@ impl Type {
             (Type::ClassLike { .. }, Type::ClassLike { .. }) => {
                 compare_classlike_classlike(self, sup)
             }
+            (Type::Union(..), _) => are_all_subtypes_of(flatten(self.clone()), sup),
+            (_, Type::List(sup)) => to_list(self).map_or(false, |sub| compare_lists(&sub, sup)),
             (_, Type::Iterable(sup)) => {
                 to_iterable(self).map_or(false, |sub| compare_iterables(&sub, sup))
             }
-            (_, Type::List(sup)) => to_list(self).map_or(false, |sub| compare_lists(&sub, sup)),
+            (_, Type::Union(left, right)) => self.is_subtype_of(left) || self.is_subtype_of(right),
             (_, Type::Map(sup_map)) => {
                 to_map(self).map_or(false, |sub_map| compare_maps(&sub_map, sup_map))
             }
-            (Type::Union(..), _) => are_all_subtypes_of(flatten(self.clone()), sup),
-            (_, Type::Union(left, right)) => self.is_subtype_of(left) || self.is_subtype_of(right),
             (Type::ClassString(_), Type::String(_)) => true,
             (Type::StringLiteral(_), Type::String(None)) => true,
             (Type::ClassString(_), Type::ClassString(None)) => true,
@@ -214,6 +227,15 @@ impl Type {
             (Type::StringLiteral(str), Type::String(Some(StringFlag::NonEmpty))) => !str.is_empty(),
             (Type::StringLiteral(str), Type::String(Some(StringFlag::Numeric))) => is_numeric(str),
             (Type::Struct(sub), Type::Struct(sup)) => compare_structs(sub, sup),
+            (
+                Type::Map(..) | Type::List(..) | Type::Struct(..) | Type::Tuple(..),
+                Type::Tuple(elements),
+            ) if elements.is_empty() => true,
+            (Type::Tuple(sub), Type::Tuple(sup)) => compare_tuples(sub, sup),
+            (Type::Never, _) => true,
+            (_, Type::Intersection(left, right)) => {
+                self.is_subtype_of(left) && self.is_subtype_of(right)
+            }
             (_, _) => false,
         }
     }

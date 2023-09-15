@@ -36,6 +36,17 @@ pub struct List {
     pub non_empty: bool,
 }
 
+impl Display for List {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.non_empty {
+            write!(f, "non-empty-list<")?;
+        } else {
+            write!(f, "list<")?;
+        }
+        write!(f, "{}>", self.type_)
+    }
+}
+
 #[derive(PartialEq, Clone)]
 pub struct StructMember {
     pub type_: Type,
@@ -134,14 +145,7 @@ impl Display for Type {
             Type::Float => write!(f, "float"),
             Type::IntLiteral(value) => write!(f, "{}", value),
             Type::Iterable(Iterable { key, value }) => write!(f, "iterable<{}, {}>", key, value),
-            Type::List(List { type_, non_empty }) => {
-                if *non_empty {
-                    write!(f, "non-empty-list<")?;
-                } else {
-                    write!(f, "list<")?;
-                }
-                write!(f, "{}>", type_)
-            }
+            Type::List(list) => list.fmt(f),
             Type::Never => write!(f, "never"),
             Type::Null => write!(f, "null"),
             Type::Resource => write!(f, "resource"),
@@ -574,14 +578,14 @@ impl ToType for str {
 pub fn intersection_to_map(left: &Type, right: &Type) -> Type {
     let mut elements = flatten(left.clone());
     elements.append(&mut flatten(right.clone()));
-    let mut key = Type::Never;
-    let mut value = Type::Never;
+    let mut keys = vec![];
+    let mut values = vec![];
     let mut non_empty = false;
     for element in elements {
         if let Type::Struct(members) = element {
             for (name, StructMember { type_, optional }) in members {
-                key = union_from_types(vec![key, Type::StringLiteral(name)]);
-                value = union_from_types(vec![value, type_]);
+                keys.push(Type::StringLiteral(name));
+                values.push(type_);
                 if !optional {
                     non_empty = true;
                 }
@@ -591,8 +595,8 @@ pub fn intersection_to_map(left: &Type, right: &Type) -> Type {
         }
     }
     Type::Map(Map {
-        key: Box::new(key),
-        value: Box::new(value),
+        key: Box::new(union_from_types(keys)),
+        value: Box::new(union_from_types(values)),
         non_empty,
     })
 }
@@ -626,13 +630,13 @@ pub fn to_iterable(t: &Type) -> Option<Iterable> {
 }
 
 fn struct_key_value_types(members: HashMap<String, StructMember>) -> (Type, Type) {
-    let mut key = Type::Never;
-    let mut value = Type::Never;
+    let mut keys = vec![];
+    let mut values = vec![];
     for (name, StructMember { type_, .. }) in members {
-        key = union_from_types(vec![key, Type::StringLiteral(name)]);
-        value = union_from_types(vec![value, type_]);
+        keys.push(Type::StringLiteral(name));
+        values.push(type_);
     }
-    (key, value)
+    (union_from_types(keys), union_from_types(values))
 }
 
 pub fn to_map(t: &Type) -> Option<Map> {

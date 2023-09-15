@@ -1,4 +1,4 @@
-use crate::r#type::{plain_int, union_from_types, Int, Type};
+use crate::r#type::{plain_int, union_from_types, Type};
 use std::collections::HashMap;
 use std::string::String;
 
