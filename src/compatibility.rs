@@ -16,16 +16,18 @@ pub fn compare_callables(sub: &Callable, sup: &Callable) -> bool {
     if !sub.return_type.is_subtype_of(&sup.return_type) {
         return false;
     }
-    for (i, sub_param) in sub.parameters.iter().enumerate() {
-        if i >= sup.parameters.len() {
-            return false;
-        }
-        let super_param = &sup.parameters[i];
-        if !super_param.type_.is_subtype_of(&sub_param.type_) {
-            return false;
-        }
+    if sub.parameters.len() > sup.parameters.len() {
+        return false;
     }
-    return true;
+    sub.parameters
+        .iter()
+        .zip(&sup.parameters)
+        .all(|(sub, sup)| {
+            if !sub.optional && sup.optional {
+                return false;
+            }
+            sup.type_.is_subtype_of(&sub.type_)
+        })
 }
 
 fn compare_ints(sub: &Int, sup: &Int) -> bool {
@@ -38,19 +40,6 @@ fn compare_ints(sub: &Int, sup: &Int) -> bool {
         sup.max.map_or(isize::MAX, |v| v),
     );
     sub.0 >= sup.0 && sub.1 <= sup.1
-}
-
-fn compare_struct_map(sub_members: &HashMap<String, StructMember>, sup_value: &Type) -> bool {
-    for StructMember {
-        type_: sub_type, ..
-    } in sub_members.values()
-    {
-        if sub_type.is_subtype_of(sup_value) {
-            continue;
-        }
-        return false;
-    }
-    true
 }
 
 fn compare_map_map(sub: &Type, sup: &Type) -> bool {
@@ -198,10 +187,14 @@ impl Type {
             (Type::Int(Int { min, max }), Type::IntLiteral(value)) => {
                 min.map_or(false, |min| min == *value) && max.map_or(false, |max| max == *value)
             }
-            (Type::IntLiteral(_), Type::Float | Type::Int { .. }) => true,
-            (Type::Struct(sub_members), Type::Map(Map { value, .. })) => {
-                compare_struct_map(sub_members, value)
-            }
+            (
+                Type::IntLiteral(_),
+                Type::Float
+                | Type::Int(Int {
+                    min: None,
+                    max: None,
+                }),
+            ) => true,
             (Type::Intersection(left, right), Type::Map(..)) => {
                 compare_map_map(&intersection_to_map(left, right), sup)
             }
@@ -235,6 +228,9 @@ impl Type {
             (Type::Never, _) => true,
             (_, Type::Intersection(left, right)) => {
                 self.is_subtype_of(left) && self.is_subtype_of(right)
+            }
+            (Type::IntLiteral(value), Type::Int(Int { min, max })) => {
+                min.map_or(true, |min| *value >= min) && max.map_or(true, |max| *value <= max)
             }
             (_, _) => false,
         }

@@ -2,7 +2,25 @@ use php_types_rust::parser::parse_type;
 use php_types_rust::r#type::Type;
 use php_types_rust::scope::Scope;
 
-const SOURCES: &[(&str, &str)] = &[
+const TYPES: &[&str] = &[
+    include_str!("./types/bool.txt"),
+    include_str!("./types/callable.txt"),
+    include_str!("./types/class-like.txt"),
+    include_str!("./types/int.txt"),
+    include_str!("./types/int-literal.txt"),
+    include_str!("./types/intersection.txt"),
+    include_str!("./types/iterable.txt"),
+    include_str!("./types/list.txt"),
+    include_str!("./types/map.txt"),
+    // include_str!("./types/misc.txt"),
+    // include_str!("./types/string.txt"),
+    include_str!("./types/string-literal.txt"),
+    // include_str!("./types/struct.txt"),
+    // include_str!("./types/tuple.txt"),
+    include_str!("./types/union.txt"),
+];
+
+const ASSERTIONS: &[(&str, &str)] = &[
     ("bool", include_str!("./assertions/bool.md")),
     ("callable", include_str!("./assertions/callable.md")),
     ("class-like", include_str!("./assertions/class-like.md")),
@@ -23,36 +41,36 @@ const SOURCES: &[(&str, &str)] = &[
     ("union", include_str!("./assertions/union.md")),
 ];
 
-fn cases_from_src(src: &str, scope: &Scope) -> Vec<(Type, Type)> {
-    return src
-        .lines()
-        .filter_map(|line| {
-            if line.is_empty() {
-                return None;
-            }
-            let parts = line[3..line.len() - 1]
-                .split("` is a subtype of `")
-                .collect::<Vec<_>>();
-            if parts.len() != 2 {
-                panic!("invalid line: {}", line);
-            }
-            let sub = parse_type(parts[0], scope).unwrap();
-            let sup = parse_type(parts[1], scope).unwrap();
-            Some((sub, sup))
-        })
-        .collect::<Vec<_>>();
+fn collect_combinations() -> Vec<(String, String)> {
+    let types: Vec<_> = TYPES
+        .iter()
+        .flat_map(|t| t.lines())
+        .map(|t| t.to_string())
+        .collect();
+    let mut combinations = vec![];
+    for sub in &types {
+        for sup in &types {
+            combinations.push((sub.clone(), sup.clone()));
+        }
+    }
+    combinations
 }
 
-fn collect_cases<'a>(scope: &Scope) -> Vec<(Type, Type, &'a str)> {
-    return SOURCES
+fn parse_assertion(line: &str) -> (String, String) {
+    let line = line.strip_prefix("- ").unwrap();
+    let mut parts = line.split(" is a subtype of ");
+    let sub = parts.next().unwrap().trim_matches('`');
+    let sup = parts.next().unwrap().trim_matches('`');
+    (sub.to_string(), sup.to_string())
+}
+
+fn collect_assertions() -> Vec<(String, String)> {
+    ASSERTIONS
         .iter()
-        .flat_map(|(file, src)| {
-            return cases_from_src(src, scope)
-                .iter()
-                .map(|(sub, sup)| (sub.clone(), sup.clone(), file.clone()))
-                .collect::<Vec<_>>();
-        })
-        .collect::<Vec<_>>();
+        .flat_map(|(_, f)| f.lines())
+        .filter(|l| !l.is_empty())
+        .map(parse_assertion)
+        .collect()
 }
 
 #[test]
@@ -88,22 +106,28 @@ fn compatibility() {
     scope.register("Runnable".to_string(), runnable);
     scope.register("Loggable".to_string(), loggable);
     scope.register("RunnableAndLoggable".to_string(), runnable_and_loggable);
-    let mut failing_cases = vec![];
-    let cases = collect_cases(&scope);
-    cases.iter().for_each(|(sub, sup, file)| {
-        if sub.is_subtype_of(sup) {
-            return;
+    let assertions = collect_assertions();
+    for combination in collect_combinations() {
+        let (sub_str, sup_str) = combination;
+        let expected = sub_str == sup_str
+            || assertions
+                .iter()
+                .any(|(sub_, sup_)| sub_ == &sub_str && sup_ == &sup_str);
+        let sub = parse_type(&sub_str, &scope).unwrap();
+        let sup = parse_type(&sup_str, &scope).unwrap();
+        let actual = sub.is_subtype_of(&sup);
+        if expected != actual {
+            if expected {
+                panic!(
+                    "Expected \"{}\" to be a subtype of \"{}\", but it is not.",
+                    sub_str, sup_str
+                );
+            } else {
+                panic!(
+                    "Expected \"{}\" to not be a subtype of \"{}\", but it is.",
+                    sub_str, sup_str
+                );
+            }
         }
-        failing_cases.push(format!("{}: {} is a subtype of {}", file, sub, sup));
-    });
-    let n_failing = failing_cases.len();
-    let n_total = cases.len();
-    assert!(
-        failing_cases.is_empty(),
-        "{}/{} ({}%) cases failed:\n{}",
-        n_failing,
-        n_total,
-        n_failing / n_total * 100,
-        failing_cases.join("\n")
-    );
+    }
 }

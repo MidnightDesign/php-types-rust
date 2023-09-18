@@ -1,0 +1,5 @@
+array{}
+float
+null
+scalar
+never

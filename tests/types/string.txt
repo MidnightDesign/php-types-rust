@@ -1,0 +1,6 @@
+class-string
+class-string<Foo>
+class-string<FooInterface>
+non-empty-string
+numeric-string
+string

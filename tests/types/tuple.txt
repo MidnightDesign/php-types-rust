@@ -1,0 +1,4 @@
+array{int, string}
+array{string, int}
+array{string, int, string}
+array{string, string}

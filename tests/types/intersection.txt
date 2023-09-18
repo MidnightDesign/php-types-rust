@@ -1,0 +1,3 @@
+array{name: string} & array{age: int}
+array{name: string} & array{name?: string}
+Runnable & Loggable

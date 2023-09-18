@@ -1,0 +1,10 @@
+int
+int<-123, 321>
+int<1, max>
+int<23, 23>
+int<23, 42>
+int<23, max>
+int<min, -1>
+int<min, 42>
+negative-int
+positive-int

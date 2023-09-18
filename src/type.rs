@@ -334,7 +334,7 @@ pub fn callable<'a>(
             Some(return_type) => Type::from_node(return_type, scope)?,
             None => Type::Void,
         }),
-        parameters: vec![],
+        parameters: params,
     }))
 }
 
@@ -528,7 +528,7 @@ pub enum StringFlag {
 #[derive(PartialEq, Clone)]
 pub struct Param {
     pub type_: Type,
-    optional: bool,
+    pub optional: bool,
 }
 
 impl Param {

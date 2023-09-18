@@ -1,0 +1,5 @@
+list<string>
+list<int>
+list<int | bool>
+list<int | string>
+non-empty-list<string>
