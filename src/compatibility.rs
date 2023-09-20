@@ -129,19 +129,30 @@ fn is_numeric(str: &str) -> bool {
     str.chars().all(|c| c.is_numeric())
 }
 
+fn compare_struct_members(sub: Option<&StructMember>, sup: &StructMember) -> bool {
+    match (sub, sup) {
+        (None, StructMember { optional, .. }) => *optional,
+        (
+            Some(StructMember { optional: true, .. }),
+            StructMember {
+                optional: false, ..
+            },
+        ) => false,
+        (Some(StructMember { type_: sub, .. }), StructMember { type_: sup, .. })
+            if sub.is_subtype_of(sup) =>
+        {
+            true
+        }
+        _ => false,
+    }
+}
+
 fn compare_structs(
     sub: &HashMap<String, StructMember>,
     sup: &HashMap<String, StructMember>,
 ) -> bool {
     for (name, sup) in sup {
-        let sub = sub.get(name);
-        let ok = match (sub, sup) {
-            (None, StructMember { optional, .. }) => *optional,
-            (Some(StructMember { type_: sub, .. }), StructMember { type_: sup, .. }) => {
-                sub.is_subtype_of(sup)
-            }
-        };
-        if ok {
+        if compare_struct_members(sub.get(name), sup) {
             continue;
         }
         return false;

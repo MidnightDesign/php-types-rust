@@ -15,7 +15,7 @@ const TYPES: &[&str] = &[
     // include_str!("./types/misc.txt"),
     include_str!("./types/string.txt"),
     include_str!("./types/string-literal.txt"),
-    // include_str!("./types/struct.txt"),
+    include_str!("./types/struct.txt"),
     // include_str!("./types/tuple.txt"),
     include_str!("./types/union.txt"),
 ];
