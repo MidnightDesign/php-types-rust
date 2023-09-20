@@ -121,6 +121,9 @@ fn are_all_subtypes_of(subs: Vec<Type>, sup: &Type) -> bool {
 }
 
 fn is_numeric(str: &str) -> bool {
+    if str.is_empty() {
+        return false;
+    }
     // TODO Should mimic PHP's is_numeric. This doesn't cover any of the following strings that PHP
     //      considers numeric: `+42`, `42e2`, `42.`, `42.69`, `42e-2`, and many more.
     str.chars().all(|c| c.is_numeric())
@@ -210,6 +213,7 @@ impl Type {
             (_, Type::Map(sup_map)) => {
                 to_map(self).map_or(false, |sub_map| compare_maps(&sub_map, sup_map))
             }
+            (Type::ClassString(_), Type::String(Some(StringFlag::Numeric))) => false,
             (Type::ClassString(_), Type::String(_)) => true,
             (Type::StringLiteral(_), Type::String(None)) => true,
             (Type::ClassString(_), Type::ClassString(None)) => true,
