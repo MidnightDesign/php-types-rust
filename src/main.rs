@@ -28,8 +28,8 @@ fn main() {
     scope.register(String::from("FooInterface"), foo_interface);
     scope.register(String::from("Foo"), foo);
     scope.register(String::from("Bar"), bar);
-    let sub = parse_type("array{age?: int, name: string}", &scope).unwrap();
-    let sup = parse_type("array{name: string} & array{age: int}", &scope).unwrap();
+    let sub = parse_type("array{string, string}", &scope).unwrap();
+    let sup = parse_type("non-empty-array<int, string>", &scope).unwrap();
     println!(
         "{} is a subtype of {}: {}",
         sub,

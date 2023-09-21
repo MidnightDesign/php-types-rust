@@ -1,4 +1,5 @@
 use crate::parser::{Node, Parameter, StructMember as NodeStructMember, ToNode};
+use crate::r#type::Type::Union;
 use crate::scope::Scope;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -361,15 +362,27 @@ pub fn flatten(t: Type) -> Vec<Type> {
     }
 }
 
-pub fn union_from_types(types: Vec<Type>) -> Type {
+fn union_from_flat_types(types: Vec<Type>) -> Type {
     match types.as_slice() {
         [] => Type::Never,
-        [type_] => (*type_).clone(),
-        [left, rest @ ..] => {
-            let right = union_from_types(rest.to_vec());
-            Type::Union(Box::new(left.clone()), Box::new(right))
-        }
+        [t] => (*t).clone(),
+        [t1, t2] if t1 == t2 => (*t1).clone(),
+        [t1, t2] => Union(Box::new((*t1).clone()), Box::new((*t2).clone())),
+        [t1, rest @ ..] => Union(
+            Box::new((*t1).clone()),
+            Box::new(union_from_flat_types(rest.to_vec())),
+        ),
     }
+}
+
+pub fn union_from_types(types: Vec<Type>) -> Type {
+    let mut types: Vec<Type> = types
+        .iter()
+        .flat_map(|type_| flatten(type_.clone()))
+        .filter(|t| types.iter().any(|t2| *t == *t2 || !t.is_subtype_of(t2)))
+        .collect();
+    types.dedup();
+    union_from_flat_types(types)
 }
 
 pub fn create_union(left: Type, right: Type) -> Type {
