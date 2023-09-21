@@ -1,8 +1,7 @@
 use crate::r#type::{
     flatten, intersection_to_map, to_iterable, to_list, to_map, Callable, Int, Iterable, List, Map,
-    StringFlag, StructMember, Type,
+    StringFlag, Struct, StructMember, Type,
 };
-use std::collections::HashMap;
 
 pub fn compare_bools(sub_value: &Option<bool>, upper_value: &Option<bool>) -> bool {
     match (sub_value, upper_value) {
@@ -147,12 +146,9 @@ fn compare_struct_members(sub: Option<&StructMember>, sup: &StructMember) -> boo
     }
 }
 
-fn compare_structs(
-    sub: &HashMap<String, StructMember>,
-    sup: &HashMap<String, StructMember>,
-) -> bool {
-    for (name, sup) in sup {
-        if compare_struct_members(sub.get(name), sup) {
+fn compare_structs(sub: &Struct, sup: &Struct) -> bool {
+    for (name, sup) in &sup.members {
+        if compare_struct_members(sub.members.get(name.as_str()), sup) {
             continue;
         }
         return false;

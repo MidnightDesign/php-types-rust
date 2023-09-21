@@ -55,6 +55,11 @@ pub struct StructMember {
 }
 
 #[derive(PartialEq, Clone)]
+pub struct Struct {
+    pub members: HashMap<String, StructMember>,
+}
+
+#[derive(PartialEq, Clone)]
 pub enum Type {
     Bool(Option<bool>),
     Callable(Callable),
@@ -78,7 +83,7 @@ pub enum Type {
     Scalar,
     String(Option<StringFlag>),
     StringLiteral(String),
-    Struct(HashMap<String, StructMember>),
+    Struct(Struct),
     Tuple(Vec<Type>),
     Union(Box<Type>, Box<Type>),
     Void,
@@ -167,7 +172,7 @@ impl Display for Type {
                 }
                 write!(f, "): {}", return_type)
             }
-            Type::Struct(members) => {
+            Type::Struct(Struct { members }) => {
                 write!(f, "array{{")?;
                 for (i, (name, StructMember { type_, optional })) in members.iter().enumerate() {
                     if i > 0 {
@@ -409,7 +414,9 @@ fn create_struct(
             },
         );
     }
-    Ok(Type::Struct(struct_members))
+    Ok(Type::Struct(Struct {
+        members: struct_members,
+    }))
 }
 
 fn class_string(mut parameters: Vec<Node>, scope: &Scope) -> Result<Type, InvalidType> {
@@ -428,16 +435,17 @@ fn class_string(mut parameters: Vec<Node>, scope: &Scope) -> Result<Type, Invali
     }
 }
 
-fn intersect_structs(
-    left: &HashMap<String, StructMember>,
-    right: &HashMap<String, StructMember>,
-) -> Type {
-    let keys: HashSet<&String> =
-        HashSet::from_iter(left.keys().into_iter().chain(right.keys().into_iter()));
+fn intersect_structs(left: &Struct, right: &Struct) -> Type {
+    let keys: HashSet<&String> = HashSet::from_iter(
+        left.members
+            .keys()
+            .into_iter()
+            .chain(right.members.keys().into_iter()),
+    );
     let mut members = HashMap::new();
     for key in keys {
-        let left_member = left.get(key);
-        let right_member = right.get(key);
+        let left_member = left.members.get(key);
+        let right_member = right.members.get(key);
         let member = match (left_member, right_member) {
             (None, None) => continue,
             (Some(member), None) => member.clone(),
@@ -449,7 +457,7 @@ fn intersect_structs(
         };
         members.insert(key.clone(), member);
     }
-    Type::Struct(members)
+    Type::Struct(Struct { members })
 }
 
 impl Type {
@@ -595,7 +603,7 @@ pub fn intersection_to_map(left: &Type, right: &Type) -> Type {
     let mut values = vec![];
     let mut non_empty = false;
     for element in elements {
-        if let Type::Struct(members) = element {
+        if let Type::Struct(Struct { members }) = element {
             for (name, StructMember { type_, optional }) in members {
                 keys.push(Type::StringLiteral(name));
                 values.push(type_);
@@ -626,7 +634,7 @@ pub fn to_iterable(t: &Type) -> Option<Iterable> {
         Type::List(List { type_, .. }) => (plain_int(), *type_.clone()),
         Type::Map(Map { key, value, .. }) => (*key.clone(), *value.clone()),
         Type::Iterable(Iterable { key, value }) => (*key.clone(), *value.clone()),
-        Type::Struct(members) => struct_key_value_types(members.clone()),
+        Type::Struct(Struct { members }) => struct_key_value_types(members.clone()),
         Type::Tuple(elements) => (
             Type::Int(Int {
                 min: Some(0),
@@ -660,7 +668,7 @@ pub fn to_map(t: &Type) -> Option<Map> {
             value: type_.clone(),
             non_empty: *non_empty,
         }),
-        Type::Struct(members) => {
+        Type::Struct(Struct { members }) => {
             let (key, value) = struct_key_value_types(members.clone());
             Some(Map {
                 key: Box::new(key),
@@ -684,7 +692,7 @@ pub fn to_list(t: &Type) -> Option<List> {
             type_: Box::new(union_from_types(elements.clone())),
             non_empty: !elements.is_empty(),
         }),
-        Type::Struct(members) if members.is_empty() => Some(List {
+        Type::Struct(Struct { members }) if members.is_empty() => Some(List {
             type_: Box::new(Type::Never),
             non_empty: false,
         }),
