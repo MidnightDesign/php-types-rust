@@ -513,7 +513,7 @@ impl Type {
             Node::Callable(return_type, parameters) => {
                 callable(parameters, return_type.map(|t| *t), scope)
             }
-            Node::Struct(members) => create_struct(members, scope),
+            Node::Struct(members, _) => create_struct(members, scope),
             Node::StringLiteral(value) => Ok(Type::StringLiteral(value)),
             Node::Tuple(elements) => {
                 let mut types = Vec::new();

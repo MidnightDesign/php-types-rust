@@ -29,7 +29,7 @@ pub enum Node {
     Intersection(Box<Node>, Box<Node>),
     IntLiteral(isize),
     StringLiteral(String),
-    Struct(HashMap<String, StructMember>),
+    Struct(HashMap<String, StructMember>, Option<Option<Box<Node>>>),
     Tuple(Vec<Node>),
     Union(Box<Node>, Box<Node>),
 }
@@ -83,7 +83,7 @@ impl Display for Node {
                 write_comma_separated(f, elements)?;
                 write!(f, "}}")
             }
-            Node::Struct(members) => {
+            Node::Struct(members, other) => {
                 write!(f, "array{{")?;
                 for (i, (name, member)) in members.iter().enumerate() {
                     if i > 0 {
@@ -94,6 +94,12 @@ impl Display for Node {
                         write!(f, "?")?;
                     }
                     write!(f, ": {}", member.type_node)?;
+                }
+                if let Some(other_type) = other {
+                    match other_type {
+                        Some(other_type) => write!(f, ", ...{}", other_type)?,
+                        None => write!(f, ", ...")?,
+                    }
                 }
                 write!(f, "}}")
             }
@@ -348,8 +354,21 @@ fn parse_struct(
         }
     }
     skip_whitespace(tokens);
+    let other = match tokens.peek() {
+        Some(Token::Ellipsis) => {
+            tokens.next();
+            skip_whitespace(tokens);
+            let other_type_node = node_from_tokens(tokens);
+            match other_type_node {
+                Ok(other_type_node) => Some(Some(Box::new(other_type_node))),
+                Err(_) => Some(None),
+            }
+        }
+        _ => None,
+    };
+    skip_whitespace(tokens);
     expect(Token::CloseBrace, tokens)?;
-    Ok(Node::Struct(members))
+    Ok(Node::Struct(members, other))
 }
 
 // Parses this:
