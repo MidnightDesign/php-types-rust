@@ -21,6 +21,7 @@ pub enum Token {
     Identifier(String),
     Equals,
     Minus,
+    Ellipsis,
 }
 
 impl Token {
@@ -64,6 +65,7 @@ impl Display for Token {
             Token::Identifier(identifier) => write!(f, "{}", identifier),
             Token::Equals => write!(f, "="),
             Token::Minus => write!(f, "-"),
+            Token::Ellipsis => write!(f, "..."),
         }
     }
 }
@@ -88,6 +90,7 @@ impl Token {
             Token::Identifier(_) => "identifier",
             Token::Equals => "equals",
             Token::Minus => "minus",
+            Token::Ellipsis => "ellipsis",
         }
     }
 }
@@ -170,6 +173,19 @@ fn parse_identifier(chars: &mut Peekable<Chars>) -> Token {
     Token::Identifier(identifier)
 }
 
+fn parse_ellipsis(chars: &mut Peekable<Chars>) -> (bool, Vec<char>) {
+    let parsed = vec![];
+    for _ in 0..3 {
+        match chars.peek() {
+            Some(char) if *char == '.' => {
+                chars.next();
+            }
+            _ => return (false, parsed),
+        }
+    }
+    (true, parsed)
+}
+
 pub fn lex(chars: &mut Peekable<Chars>) -> Vec<Token> {
     let mut tokens = Vec::new();
     loop {
@@ -183,6 +199,17 @@ pub fn lex(chars: &mut Peekable<Chars>) -> Vec<Token> {
             }
             Some(char) if char == &'"' || char == &'\'' => {
                 tokens.push(parse_string(chars));
+            }
+            Some(char) if *char == '.' => {
+                let (is_ellipsis, parsed_chars) = parse_ellipsis(chars);
+                if is_ellipsis {
+                    tokens.push(Token::Ellipsis);
+                } else {
+                    let identifier = parse_identifier(chars);
+                    let mut chars = parsed_chars;
+                    chars.extend(identifier.to_string().chars());
+                    tokens.push(Token::Identifier(chars.into_iter().collect()));
+                }
             }
             Some(char) => {
                 if let Some(token) = Token::from_char(*char) {
