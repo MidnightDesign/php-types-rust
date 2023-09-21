@@ -23,6 +23,27 @@ pub enum Token {
     Minus,
 }
 
+impl Token {
+    fn from_char(c: char) -> Option<Token> {
+        match c {
+            '<' => Some(Token::OpenAngle),
+            '>' => Some(Token::CloseAngle),
+            ':' => Some(Token::Colon),
+            ',' => Some(Token::Comma),
+            '(' => Some(Token::OpenParen),
+            ')' => Some(Token::CloseParen),
+            '{' => Some(Token::OpenBrace),
+            '}' => Some(Token::CloseBrace),
+            '|' => Some(Token::Pipe),
+            '&' => Some(Token::Ampersand),
+            '?' => Some(Token::QuestionMark),
+            '=' => Some(Token::Equals),
+            '-' => Some(Token::Minus),
+            _ => None,
+        }
+    }
+}
+
 impl Display for Token {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -154,42 +175,21 @@ pub fn lex(chars: &mut Peekable<Chars>) -> Vec<Token> {
     loop {
         match chars.peek() {
             None => break,
+            Some(char) if char.is_numeric() => {
+                tokens.push(parse_integer(chars));
+            }
+            Some(char) if char.is_whitespace() => {
+                tokens.push(parse_whitespace(chars));
+            }
+            Some(char) if char == &'"' || char == &'\'' => {
+                tokens.push(parse_string(chars));
+            }
             Some(char) => {
-                if char.is_numeric() {
-                    tokens.push(parse_integer(chars));
-                    continue;
-                }
-                if char.is_whitespace() {
-                    tokens.push(parse_whitespace(chars));
-                    continue;
-                }
-                if char == &'"' || char == &'\'' {
-                    tokens.push(parse_string(chars));
-                    continue;
-                }
-                let token = match char {
-                    '<' => Some(Token::OpenAngle),
-                    '>' => Some(Token::CloseAngle),
-                    ':' => Some(Token::Colon),
-                    ',' => Some(Token::Comma),
-                    '(' => Some(Token::OpenParen),
-                    ')' => Some(Token::CloseParen),
-                    '{' => Some(Token::OpenBrace),
-                    '}' => Some(Token::CloseBrace),
-                    '|' => Some(Token::Pipe),
-                    '&' => Some(Token::Ampersand),
-                    '?' => Some(Token::QuestionMark),
-                    '=' => Some(Token::Equals),
-                    '-' => Some(Token::Minus),
-                    _ => None,
-                };
-                match token {
-                    Some(t) => {
-                        tokens.push(t);
-                        chars.next();
-                        continue;
-                    }
-                    None => tokens.push(parse_identifier(chars)),
+                if let Some(token) = Token::from_char(*char) {
+                    tokens.push(token);
+                    chars.next();
+                } else {
+                    tokens.push(parse_identifier(chars));
                 }
             }
         }
