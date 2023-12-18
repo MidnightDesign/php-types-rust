@@ -1,51 +1,86 @@
+use clap::{Parser, Subcommand};
+
+use crate::parser::parse_type;
+use crate::scope::Scope;
+
 mod compatibility;
 mod lexer;
 mod parser;
 mod scope;
 mod r#type;
 
-use crate::parser::parse_type;
-use crate::r#type::Type;
-use crate::scope::Scope;
+#[derive(Parser)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    #[command()]
+    Validate {
+        #[arg()]
+        input: String,
+    },
+    #[command()]
+    Check {
+        #[arg()]
+        super_: String,
+        #[arg()]
+        sub: String,
+    },
+    #[command()]
+    Normalize {
+        #[arg()]
+        input: String,
+    },
+}
 
 fn main() {
-    let mut scope = Scope::global();
-    let foo_interface = Type::ClassLike {
-        name: String::from("FooInterface"),
-        parameters: vec![],
-        parents: vec![],
-    };
-    let foo = Type::ClassLike {
-        name: String::from("Foo"),
-        parameters: vec![],
-        parents: vec![foo_interface.clone()],
-    };
-    let bar = Type::ClassLike {
-        name: String::from("Bar"),
-        parameters: vec![],
-        parents: vec![foo_interface.clone()],
-    };
-    scope.register(String::from("FooInterface"), foo_interface);
-    scope.register(String::from("Foo"), foo);
-    scope.register(String::from("Bar"), bar);
-    let runnable = Type::ClassLike {
-        name: String::from("Runnable"),
-        parameters: vec![],
-        parents: vec![],
-    };
-    let loggable = Type::ClassLike {
-        name: String::from("Loggable"),
-        parameters: vec![],
-        parents: vec![],
-    };
-    scope.register(String::from("Runnable"), runnable);
-    scope.register(String::from("Loggable"), loggable);
-    let sub = parse_type("array<'name' | 'age', string | int>", &scope).unwrap();
-    let sup = parse_type("array<'name' | 'age', string | int>", &scope).unwrap();
-    println!(
-        "{} is a subtype of {}: {}",
-        sub,
-        sup,
-        sub.is_subtype_of(&sup)
-    );
+    let cli = Cli::parse();
+
+    match &cli.command {
+        Some(Commands::Validate { input }) => validate(input),
+        Some(Commands::Check { super_, sub }) => check(super_, sub),
+        Some(Commands::Normalize { input }) => normalize(input),
+        None => {
+            println!("No command specified");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn validate(input: &str) {
+    let scope = Scope::global();
+    let result = parse_type(input, &scope);
+    if let Err(e) = result {
+        println!("{}", e);
+        std::process::exit(1);
+    }
+    std::process::exit(0);
+}
+
+fn check(super_: &str, sub: &str) {
+    let scope = Scope::global();
+    let super_ = parse_type(super_, &scope).unwrap();
+    let sub = parse_type(sub, &scope).unwrap();
+    let result = sub.is_subtype_of(&super_);
+    if result {
+        std::process::exit(0);
+    } else {
+        println!("{} is not a subtype of {}", sub, super_);
+        std::process::exit(1);
+    }
+}
+
+fn normalize(input: &str) {
+    let scope = Scope::global();
+    let result = parse_type(input, &scope);
+    if let Err(e) = result {
+        println!("{}", e);
+        std::process::exit(1);
+    }
+    let ty = result.unwrap();
+    println!("{}", ty);
+    std::process::exit(0);
 }
