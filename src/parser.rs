@@ -1,12 +1,13 @@
-use crate::lexer::{lex, Token};
-use crate::r#type::{InvalidType, Type};
-use crate::scope::Scope;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::iter::Peekable;
 use std::slice::Iter;
+
+use crate::lexer::{lex, Token};
+use crate::r#type::{InvalidType, Type};
+use crate::scope::Scope;
 
 type Tokens<'a> = Peekable<Iter<'a, Token>>;
 
@@ -160,61 +161,66 @@ fn skip_whitespace(tokens: &mut Peekable<Iter<Token>>) {
     }
 }
 
-fn parse_callable_param(tokens: &mut Peekable<Iter<Token>>) -> Option<Parameter> {
-    let param_type = match node_from_tokens(tokens) {
+// callable(string, int=, bool=): void
+//                  ====
+fn parse_param(tokens: &mut Peekable<Iter<Token>>) -> Option<Parameter> {
+    let type_node = match node_from_tokens(tokens) {
         Ok(node) => node,
         Err(_) => return None,
     };
-    let optional = matches!(tokens.peek(), Some(Token::Equals));
-    if optional {
-        tokens.next();
-    }
-    skip_whitespace(tokens);
-    skip(Token::Comma, tokens);
-    skip_whitespace(tokens);
+    let optional = match tokens.peek() {
+        Some(Token::Equals) => {
+            tokens.next();
+            true
+        }
+        _ => false,
+    };
     Some(Parameter {
-        type_node: param_type,
+        type_node,
         optional,
     })
 }
 
-fn parse_callable_params(tokens: &mut Peekable<Iter<Token>>) -> Vec<Parameter> {
+// callable(string, int): void
+//          ===========
+fn parse_params(tokens: &mut Peekable<Iter<Token>>) -> Vec<Parameter> {
     let mut parameters = Vec::new();
     loop {
         skip_whitespace(tokens);
         if matches!(tokens.peek(), None | Some(Token::CloseParen)) {
             break;
         }
-        match parse_callable_param(tokens) {
+        match parse_param(tokens) {
             Some(parameter) => parameters.push(parameter),
             None => break,
         };
+        skip(Token::Comma, tokens);
     }
     parameters
 }
 
 fn expect(expected: Token, tokens: &mut Peekable<Iter<Token>>) -> Result<(), ParseError> {
-    let token = match tokens.next() {
-        None => return Err(ParseError::unexpected_end_of_input()),
-        Some(token) => token,
-    };
-    if *token != expected {
-        return Err(ParseError::unexpected_token(token, Some(vec![&expected])));
+    match tokens.peek() {
+        None => Err(ParseError::unexpected_end_of_input()),
+        Some(actual) if **actual == expected => {
+            tokens.next();
+            Ok(())
+        }
+        Some(token) => Err(ParseError::unexpected_token(token, Some(vec![&expected]))),
     }
-    Ok(())
 }
 
+// callable(string, int): void
+// ===========================
 fn parse_callable(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, ParseError> {
+    expect(Token::Identifier("callable".to_string()), tokens)?;
     let token = tokens.peek();
     match token {
-        None => return Ok(Node::Callable(None, Vec::new())),
-        Some(token) => match token {
-            Token::OpenParen => token,
-            _ => return Ok(Node::Callable(None, Vec::new())),
-        },
+        Some(Token::OpenParen) => {}
+        _ => return Ok(Node::Callable(None, Vec::new())),
     };
     tokens.next();
-    let parameters = parse_callable_params(tokens);
+    let parameters = parse_params(tokens);
     expect(Token::CloseParen, tokens)?;
     skip_whitespace(tokens);
     let return_type = match tokens.peek() {
@@ -375,7 +381,7 @@ fn parse_struct(
 // array{ ... }
 //      =======
 fn parse_braced_array(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, ParseError> {
-    tokens.next();
+    skip(Token::OpenBrace, tokens);
     skip_whitespace(tokens);
     match tokens.peek() {
         None => return Err(ParseError::unexpected_end_of_input()),
@@ -424,51 +430,78 @@ fn parse_braced_array(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, ParseE
 }
 
 // Parses this:
-// array<string, int>
-//             =====
+// Foo<string, int , float>
+//            =====
 fn parse_type_param(tokens: &mut Peekable<Iter<Token>>) -> Option<Node> {
     skip_whitespace(tokens);
-    skip(Token::Comma, tokens);
-    skip_whitespace(tokens);
-    match node_from_tokens(tokens) {
+    let node = match node_from_tokens(tokens) {
         Ok(type_param) => Some(type_param),
         Err(_) => None,
-    }
+    };
+    skip_whitespace(tokens);
+    node
 }
 
 // Parses this:
 // array<string, int>
 //      =============
 fn parse_type_params(tokens: &mut Tokens) -> Result<Vec<Node>, ParseError> {
-    tokens.next();
-    skip_whitespace(tokens);
+    expect(Token::OpenAngle, tokens)?;
     let mut type_params = Vec::new();
     loop {
         match parse_type_param(tokens) {
-            None => break,
             Some(type_param) => type_params.push(type_param),
-        }
+            None => break,
+        };
         match tokens.peek() {
-            None => return Err(ParseError::unexpected_end_of_input()),
+            Some(Token::Comma) => {
+                tokens.next();
+                continue;
+            }
             Some(Token::CloseAngle) => break,
-            _ => (),
+            Some(token) => {
+                return Err(ParseError::unexpected_token(
+                    token,
+                    Some(vec![&Token::Comma, &Token::CloseAngle]),
+                ))
+            }
+            None => return Err(ParseError::unexpected_end_of_input()),
         }
     }
     expect(Token::CloseAngle, tokens)?;
     Ok(type_params)
 }
 
-fn parse_identifier(name: String, tokens: &mut Peekable<Iter<Token>>) -> Result<Node, ParseError> {
+// array<string, int>
+// ==================
+fn parse_identifier(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, ParseError> {
+    let name = match tokens.peek() {
+        None => return Err(ParseError::unexpected_end_of_input()),
+        Some(Token::Identifier(name)) => name.clone(),
+        Some(token) => {
+            return Err(ParseError::unexpected_token(
+                token,
+                Some(vec![&Token::Identifier("".to_string())]),
+            ))
+        }
+    };
+    tokens.next();
     if let Some(Token::OpenAngle) = tokens.peek() {
         return Ok(Node::Identifier(name, parse_type_params(tokens)?));
     }
     Ok(Node::Identifier(name, Vec::new()))
 }
 
+// array[...]
+// ==========
 fn parse_array(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, ParseError> {
+    skip(Token::Identifier("array".to_string()), tokens);
     let token = tokens.peek();
     match token {
-        Some(Token::OpenAngle) => parse_identifier("array".to_string(), tokens),
+        Some(Token::OpenAngle) => Ok(Node::Identifier(
+            "array".to_string(),
+            parse_type_params(tokens)?,
+        )),
         Some(Token::OpenBrace) => parse_braced_array(tokens),
         _ => Ok(Node::Identifier("array".to_string(), Vec::new())),
     }
@@ -486,6 +519,8 @@ fn parse_integer(tokens: &mut Tokens) -> Result<isize, ParseError> {
 }
 
 fn parse_union(left: Option<Node>, tokens: &mut Tokens) -> Result<Node, ParseError> {
+    skip(Token::Pipe, tokens);
+    skip_whitespace(tokens);
     match left {
         None => Err(ParseError::unexpected_token(&Token::Pipe, None)),
         Some(left) => Ok(Node::Union(
@@ -496,6 +531,8 @@ fn parse_union(left: Option<Node>, tokens: &mut Tokens) -> Result<Node, ParseErr
 }
 
 fn parse_intersection(left: Option<Node>, tokens: &mut Tokens) -> Result<Node, ParseError> {
+    skip(Token::Ampersand, tokens);
+    skip_whitespace(tokens);
     match left {
         None => Err(ParseError::unexpected_token(&Token::Ampersand, None)),
         Some(left) => Ok(Node::Intersection(
@@ -509,7 +546,7 @@ pub fn node_from_tokens(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, Pars
     skip_whitespace(tokens);
     let mut node: Option<Node> = None;
     loop {
-        let token = match tokens.next() {
+        let token = match tokens.peek() {
             None => return Err(ParseError::unexpected_end_of_input()),
             Some(token) => token,
         };
@@ -517,11 +554,20 @@ pub fn node_from_tokens(tokens: &mut Peekable<Iter<Token>>) -> Result<Node, Pars
             Token::Identifier(value) => match value.as_str() {
                 "callable" => parse_callable(tokens)?,
                 "array" => parse_array(tokens)?,
-                _ => parse_identifier(value.clone(), tokens)?,
+                _ => parse_identifier(tokens)?,
             },
-            Token::Integer(value) => Node::IntLiteral(*value),
-            Token::Minus => Node::IntLiteral(-parse_integer(tokens)?),
-            Token::String(value) => Node::StringLiteral((*value).clone()),
+            Token::Integer(value) => {
+                tokens.next();
+                Node::IntLiteral(*value)
+            }
+            Token::Minus => {
+                tokens.next();
+                Node::IntLiteral(-parse_integer(tokens)?)
+            }
+            Token::String(value) => {
+                tokens.next();
+                Node::StringLiteral((*value).clone())
+            }
             Token::Pipe => parse_union(node, tokens)?,
             Token::Ampersand => parse_intersection(node, tokens)?,
             _ => {
@@ -572,6 +618,6 @@ impl ToNode for String {
 }
 
 pub fn parse_type(str: &str, scope: &Scope) -> Result<Type, InvalidType> {
-    let node = parse(str).map_err(|_| InvalidType::new(String::from(str)))?;
+    let node = parse(str).map_err(|e| InvalidType::new(format!("{}", e)))?;
     Type::from_node(node, scope)
 }

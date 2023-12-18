@@ -33,11 +33,4 @@ impl Scope {
             },
         }
     }
-
-    pub fn sub(self) -> Scope {
-        Scope {
-            types: HashMap::new(),
-            parent: Some(Box::new(self)),
-        }
-    }
 }

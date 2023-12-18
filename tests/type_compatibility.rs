@@ -113,8 +113,20 @@ fn compatibility() {
             || assertions
                 .iter()
                 .any(|(sub_, sup_)| sub_ == &sub_str && sup_ == &sup_str);
-        let sub = parse_type(&sub_str, &scope).unwrap();
-        let sup = parse_type(&sup_str, &scope).unwrap();
+        let sub = parse_type(&sub_str, &scope).unwrap_or_else(|err| {
+            panic!(
+                "Failed to parse \"{}\": {}",
+                sub_str,
+                err.to_string().replace("\n", " ")
+            )
+        });
+        let sup = parse_type(&sup_str, &scope).unwrap_or_else(|err| {
+            panic!(
+                "Failed to parse \"{}\": {}",
+                sup_str,
+                err.to_string().replace("\n", " ")
+            )
+        });
         let actual = sub.is_subtype_of(&sup);
         if expected != actual {
             if expected {

@@ -113,7 +113,7 @@ fn parse_integer(chars: &mut Peekable<Chars>) -> Token {
     Token::Integer(integer.parse().unwrap())
 }
 
-fn parse_whitespace(chars: &mut Peekable<Chars>) -> Token {
+fn consume_whitespace(chars: &mut Peekable<Chars>) -> Token {
     loop {
         match chars.peek() {
             None => break,
@@ -195,7 +195,7 @@ pub fn lex(chars: &mut Peekable<Chars>) -> Vec<Token> {
                 tokens.push(parse_integer(chars));
             }
             Some(char) if char.is_whitespace() => {
-                tokens.push(parse_whitespace(chars));
+                consume_whitespace(chars);
             }
             Some(char) if char == &'"' || char == &'\'' => {
                 tokens.push(parse_string(chars));

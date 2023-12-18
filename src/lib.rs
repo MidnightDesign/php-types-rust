@@ -1,3 +1,5 @@
+extern crate core;
+
 pub mod compatibility;
 mod lexer;
 pub mod parser;

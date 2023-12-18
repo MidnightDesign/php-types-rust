@@ -28,8 +28,20 @@ fn main() {
     scope.register(String::from("FooInterface"), foo_interface);
     scope.register(String::from("Foo"), foo);
     scope.register(String::from("Bar"), bar);
-    let sub = parse_type("array{string, string}", &scope).unwrap();
-    let sup = parse_type("non-empty-array<int, string>", &scope).unwrap();
+    let runnable = Type::ClassLike {
+        name: String::from("Runnable"),
+        parameters: vec![],
+        parents: vec![],
+    };
+    let loggable = Type::ClassLike {
+        name: String::from("Loggable"),
+        parameters: vec![],
+        parents: vec![],
+    };
+    scope.register(String::from("Runnable"), runnable);
+    scope.register(String::from("Loggable"), loggable);
+    let sub = parse_type("array<'name' | 'age', string | int>", &scope).unwrap();
+    let sup = parse_type("array<'name' | 'age', string | int>", &scope).unwrap();
     println!(
         "{} is a subtype of {}: {}",
         sub,
