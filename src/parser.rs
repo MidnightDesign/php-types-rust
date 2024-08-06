@@ -292,14 +292,8 @@ fn parse_struct_member(
 ) -> Result<Option<(String, StructMember)>, ParseError> {
     skip_whitespace(tokens);
     let name = match tokens.peek() {
-        None | Some(Token::CloseBrace) => return Ok(None),
         Some(Token::Identifier(name)) => name,
-        Some(token) => {
-            return Err(ParseError::unexpected_token(
-                token,
-                Some(vec![&Token::Identifier("".to_string())]),
-            ))
-        }
+        _ => return Ok(None),
     };
     tokens.next();
     let optional = match tokens.peek() {
