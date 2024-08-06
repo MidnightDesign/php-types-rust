@@ -21,9 +21,22 @@
 - `array{name: int}` is a subtype of `array<mixed>`
 - `array{name: int}` is a subtype of `array{}`
 - `array{name: int}` is a subtype of `array{name: int}`
+- `array{name: int}` is a subtype of `array{name: int, ...}`
 - `array{name: int}` is a subtype of `iterable`
 - `array{name: int}` is a subtype of `iterable<mixed>`
 - `array{name: int}` is a subtype of `iterable<mixed, mixed>`
+
+- `array{name: int, ...}` is a subtype of `array`
+- `array{name: int, ...}` is a subtype of `array<'name' | 'age', string | int>`
+- `array{name: int, ...}` is a subtype of `array<array-key, float>`
+- `array{name: int, ...}` is a subtype of `array<array-key, mixed>`
+- `array{name: int, ...}` is a subtype of `array<array-key, string | int>`
+- `array{name: int, ...}` is a subtype of `array<float>`
+- `array{name: int, ...}` is a subtype of `array<mixed>`
+- `array{name: int, ...}` is a subtype of `array{name: int}`
+- `array{name: int, ...}` is a subtype of `iterable`
+- `array{name: int, ...}` is a subtype of `iterable<mixed>`
+- `array{name: int, ...}` is a subtype of `iterable<mixed, mixed>`
 
 - `array{name: string}` is a subtype of `array`
 - `array{name: string}` is a subtype of `array<'name' | 'age', string | int>`
