@@ -274,11 +274,7 @@ fn array(mut parameters: Vec<Node>, non_empty: bool, scope: &Scope) -> Result<Ty
     }))
 }
 
-fn list<'a>(
-    mut parameters: Vec<Node>,
-    non_empty: bool,
-    scope: &Scope,
-) -> Result<Type, InvalidType> {
+fn list(mut parameters: Vec<Node>, non_empty: bool, scope: &Scope) -> Result<Type, InvalidType> {
     let value_type = match parameters.len() {
         0 => Type::Mixed,
         1 => {
@@ -298,7 +294,7 @@ fn list<'a>(
     }))
 }
 
-pub fn iterable<'a>(mut parameters: Vec<Node>, scope: &Scope) -> Result<Type, InvalidType> {
+pub fn iterable(mut parameters: Vec<Node>, scope: &Scope) -> Result<Type, InvalidType> {
     let (key, value) = match parameters.len() {
         0 => (Type::Mixed, Type::Mixed),
         1 => {
@@ -323,7 +319,7 @@ pub fn iterable<'a>(mut parameters: Vec<Node>, scope: &Scope) -> Result<Type, In
     }))
 }
 
-pub fn callable<'a>(
+pub fn callable(
     parameters: Vec<Parameter>,
     return_type: Option<Node>,
     scope: &Scope,
@@ -344,7 +340,7 @@ pub fn callable<'a>(
     }))
 }
 
-fn no_params<'a>(type_: Type, parameters: Vec<Node>) -> Result<Type, InvalidType> {
+fn no_params(type_: Type, parameters: Vec<Node>) -> Result<Type, InvalidType> {
     match parameters.as_slice() {
         [] => Ok(type_),
         _ => Err(InvalidType::new(format!(
