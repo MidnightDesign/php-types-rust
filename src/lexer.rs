@@ -97,34 +97,22 @@ impl Token {
 
 fn parse_integer(chars: &mut Peekable<Chars>) -> Token {
     let mut integer = String::new();
-    loop {
-        match chars.peek() {
-            None => break,
-            Some(char) => {
-                if char.is_numeric() {
-                    integer.push(*char);
-                    chars.next();
-                } else {
-                    break;
-                }
-            }
+    while let Some(char) = chars.peek() {
+        if !char.is_numeric() {
+            break;
         }
+        integer.push(*char);
+        chars.next();
     }
     Token::Integer(integer.parse().unwrap())
 }
 
 fn consume_whitespace(chars: &mut Peekable<Chars>) -> Token {
-    loop {
-        match chars.peek() {
-            None => break,
-            Some(char) => {
-                if char.is_whitespace() {
-                    chars.next();
-                } else {
-                    break;
-                }
-            }
+    while let Some(char) = chars.peek() {
+        if !char.is_whitespace() {
+            break;
         }
+        chars.next();
     }
     Token::Whitespace
 }
@@ -132,19 +120,13 @@ fn consume_whitespace(chars: &mut Peekable<Chars>) -> Token {
 fn parse_string(chars: &mut Peekable<Chars>) -> Token {
     let mut string = String::new();
     let quote = chars.next().unwrap();
-    loop {
-        match chars.peek() {
-            None => break,
-            Some(char) => {
-                if char == &quote {
-                    chars.next();
-                    break;
-                } else {
-                    string.push(*char);
-                    chars.next();
-                }
-            }
+    while let Some(char) = chars.peek() {
+        if char == &quote {
+            chars.next();
+            break;
         }
+        string.push(*char);
+        chars.next();
     }
     Token::String(string)
 }
@@ -158,17 +140,12 @@ fn is_identifier_char(char: char) -> bool {
 
 fn parse_identifier(chars: &mut Peekable<Chars>) -> Token {
     let mut identifier = String::new();
-    loop {
-        match chars.peek() {
-            None => break,
-            Some(char) => {
-                if char.is_whitespace() || !is_identifier_char(*char) {
-                    break;
-                }
-                identifier.push(*char);
-                chars.next();
-            }
+    while let Some(char) = chars.peek() {
+        if char.is_whitespace() || !is_identifier_char(*char) {
+            break;
         }
+        identifier.push(*char);
+        chars.next();
     }
     Token::Identifier(identifier)
 }
